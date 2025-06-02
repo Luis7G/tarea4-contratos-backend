@@ -24,9 +24,14 @@ RUN wget https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-2/w
 
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
-COPY ["ContratosPdfApi.csproj", "./"]
-RUN dotnet restore "ContratosPdfApi.csproj"
-COPY . .
+
+# Copiar el archivo de proyecto
+COPY ["ContratosPdfApi.csproj", "ContratosPdfApi/"]
+RUN dotnet restore "ContratosPdfApi/ContratosPdfApi.csproj"
+
+# Copiar todo el código fuente
+COPY . ContratosPdfApi/
+WORKDIR "/src/ContratosPdfApi"
 RUN dotnet build "ContratosPdfApi.csproj" -c Release -o /app/build
 
 FROM build AS publish
@@ -36,9 +41,11 @@ FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
 
-# Crear directorio wwwroot si no existe y copiar contenido si existe
+# Crear directorio wwwroot
 RUN mkdir -p wwwroot/assets wwwroot/temp
-COPY --chown=app:app wwwroot/ ./wwwroot/ 2>/dev/null || true
+
+# Copiar wwwroot solo si existe (opcional)
+COPY --from=build /src/ContratosPdfApi/wwwroot ./wwwroot/ 2>/dev/null || echo "No wwwroot directory found, skipping..."
 
 ENV ASPNETCORE_ENVIRONMENT=Production
 ENTRYPOINT ["dotnet", "ContratosPdfApi.dll"]
