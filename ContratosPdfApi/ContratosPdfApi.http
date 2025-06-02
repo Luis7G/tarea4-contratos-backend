@@ -1,0 +1,6 @@
+@ContratosPdfApi_HostAddress = http://localhost:5221
+
+GET {{ContratosPdfApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
