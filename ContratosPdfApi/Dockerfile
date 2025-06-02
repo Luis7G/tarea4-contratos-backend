@@ -36,14 +36,9 @@ FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
 
-# Copiar wwwroot y sus subdirectorios
-COPY wwwroot/ ./wwwroot/
-
-# Crear subdirectorios si no existen (por si wwwroot está vacío)
+# Crear directorio wwwroot si no existe y copiar contenido si existe
 RUN mkdir -p wwwroot/assets wwwroot/temp
-
-# Copiar archivos wkhtmltopdf si existen (para compatibilidad)
-COPY wkhtmltopdf.exe wkhtmltox.dll ./
+COPY --chown=app:app wwwroot/ ./wwwroot/ 2>/dev/null || true
 
 ENV ASPNETCORE_ENVIRONMENT=Production
 ENTRYPOINT ["dotnet", "ContratosPdfApi.dll"]
