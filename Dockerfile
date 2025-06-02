@@ -2,7 +2,7 @@ FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
 WORKDIR /app
 EXPOSE 8080
 
-# Instalar dependencias para wkhtmltopdf
+# Instalar dependencias y wkhtmltopdf desde repositorios oficiales
 RUN apt-get update && apt-get install -y \
     wget \
     fontconfig \
@@ -15,12 +15,11 @@ RUN apt-get update && apt-get install -y \
     libxrender1 \
     xfonts-75dpi \
     xfonts-base \
+    wkhtmltopdf \
     && rm -rf /var/lib/apt/lists/*
 
-# Descargar e instalar wkhtmltopdf
-RUN wget https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-2/wkhtmltox_0.12.6.1-2.bullseye_amd64.deb \
-    && dpkg -i wkhtmltox_0.12.6.1-2.bullseye_amd64.deb \
-    && rm wkhtmltox_0.12.6.1-2.bullseye_amd64.deb
+# Verificar que wkhtmltopdf esté instalado
+RUN wkhtmltopdf --version
 
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
