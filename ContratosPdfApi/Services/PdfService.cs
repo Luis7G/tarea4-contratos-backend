@@ -27,7 +27,7 @@ namespace ContratosPdfApi.Services
                 // Determinar la URL base según el ambiente
                 var baseUrl = _environment.IsDevelopment()
                     ? "http://localhost:5221"
-                    : Environment.GetEnvironmentVariable("RENDER_EXTERNAL_URL") ?? "https://your-app-name.onrender.com";
+                    : Environment.GetEnvironmentVariable("RENDER_EXTERNAL_URL") ?? "https://contratos-pdf-api.onrender.com";
 
                 // HTML completo con header incluido en el contenido principal
                 var styledHtml = $@"

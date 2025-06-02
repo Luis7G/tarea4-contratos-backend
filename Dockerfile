@@ -40,8 +40,11 @@ FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
 
-# Crear directorio wwwroot para assets dinámicos
-RUN mkdir -p wwwroot/assets wwwroot/temp
+# Copiar wwwroot desde el build stage (incluye assets)
+COPY --from=build /src/ContratosPdfApi/wwwroot ./wwwroot/
+
+# Crear directorios adicionales si no existen
+RUN mkdir -p wwwroot/temp
 
 ENV ASPNETCORE_ENVIRONMENT=Production
 ENTRYPOINT ["dotnet", "ContratosPdfApi.dll"]
