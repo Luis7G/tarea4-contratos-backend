@@ -9,36 +9,52 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// Configurar CORS
+// Configurar CORS - ACTUALIZADO PARA PRODUCCIÓN
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAngular", policy =>
+    options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.WithOrigins("http://localhost:4200")
+        policy.WithOrigins(
+                "http://localhost:4200", // Para desarrollo local
+                "https://your-frontend-domain.com", // Reemplaza con tu dominio de frontend
+                "https://*.render.com" // Para otros servicios en Render
+              )
               .AllowAnyHeader()
               .AllowAnyMethod();
     });
 });
 
-// Configurar DinkToPdf
+// Configurar DinkToPdf - ACTUALIZADO PARA LINUX
 try
 {
     var context = new CustomAssemblyLoadContext();
-    var basePath = Directory.GetCurrentDirectory();
-    var libraryPath = Path.Combine(basePath, "libwkhtmltox.dll");
-
-    Console.WriteLine($"Cargando DLL desde: {libraryPath}");
-    Console.WriteLine($"¿Archivo existe?: {File.Exists(libraryPath)}");
-
-    if (File.Exists(libraryPath))
+    var isProduction = builder.Environment.IsProduction();
+    
+    if (isProduction)
     {
-        context.LoadUnmanagedLibrary(libraryPath);
+        // En producción (Linux), usar la librería del sistema
         builder.Services.AddSingleton(typeof(IConverter), new SynchronizedConverter(new PdfTools()));
-        Console.WriteLine("DinkToPdf configurado exitosamente");
+        Console.WriteLine("DinkToPdf configurado para producción (Linux)");
     }
     else
     {
-        Console.WriteLine("ERROR: libwkhtmltox.dll no encontrado");
+        // En desarrollo (Windows), usar la DLL local
+        var basePath = Directory.GetCurrentDirectory();
+        var libraryPath = Path.Combine(basePath, "libwkhtmltox.dll");
+
+        Console.WriteLine($"Cargando DLL desde: {libraryPath}");
+        Console.WriteLine($"¿Archivo existe?: {File.Exists(libraryPath)}");
+
+        if (File.Exists(libraryPath))
+        {
+            context.LoadUnmanagedLibrary(libraryPath);
+            builder.Services.AddSingleton(typeof(IConverter), new SynchronizedConverter(new PdfTools()));
+            Console.WriteLine("DinkToPdf configurado exitosamente para desarrollo");
+        }
+        else
+        {
+            Console.WriteLine("ERROR: libwkhtmltox.dll no encontrado");
+        }
     }
 }
 catch (Exception ex)
@@ -48,28 +64,44 @@ catch (Exception ex)
 
 // Registrar servicios
 builder.Services.AddScoped<IPdfService, PdfService>();
-
-// ⭐ AGREGAR: Servicio de limpieza automática de archivos temporales
 builder.Services.AddHostedService<TempFileCleanupService>();
 
 var app = builder.Build();
 
+// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+else
+{
+    // En producción también mostrar Swagger para testing
+    app.UseSwagger();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Contratos PDF API V1");
+        c.RoutePrefix = "swagger";
+    });
+}
 
-// Servir archivos estáticos (incluyendo carpeta temp)
+// Servir archivos estáticos
 app.UseStaticFiles();
 
-app.UseCors("AllowAngular");
+app.UseCors("AllowFrontend");
 app.UseAuthorization();
 app.MapControllers();
 
-Console.WriteLine("Servidor iniciado en http://localhost:5221");
-Console.WriteLine("Swagger disponible en http://localhost:5221/swagger");
-Console.WriteLine("Assets disponibles en http://localhost:5221/assets/");
-Console.WriteLine("Archivos temporales se eliminan automáticamente cada 30 min");
+// Health check endpoint
+app.MapGet("/health", () => Results.Ok(new { 
+    status = "healthy", 
+    timestamp = DateTime.UtcNow,
+    environment = app.Environment.EnvironmentName 
+}));
 
-app.Run();
+var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+Console.WriteLine($"Servidor iniciado en puerto {port}");
+Console.WriteLine($"Ambiente: {app.Environment.EnvironmentName}");
+Console.WriteLine("Swagger disponible en /swagger");
+
+app.Run($"http://0.0.0.0:{port}");

@@ -9,11 +9,13 @@ namespace ContratosPdfApi.Services
     {
         private readonly IConverter _converter;
         private readonly ILogger<PdfService> _logger;
+        private readonly IWebHostEnvironment _environment;
 
-        public PdfService(IConverter converter, ILogger<PdfService> logger)
+        public PdfService(IConverter converter, ILogger<PdfService> logger, IWebHostEnvironment environment)
         {
             _converter = converter;
             _logger = logger;
+            _environment = environment;
         }
 
         public byte[] GeneratePdfFromHtml(string htmlContent)
@@ -21,6 +23,11 @@ namespace ContratosPdfApi.Services
             try
             {
                 _logger.LogInformation("Iniciando conversión HTML a PDF");
+
+                // Determinar la URL base según el ambiente
+                var baseUrl = _environment.IsDevelopment()
+                    ? "http://localhost:5221"
+                    : Environment.GetEnvironmentVariable("RENDER_EXTERNAL_URL") ?? "https://your-app-name.onrender.com";
 
                 // HTML completo con header incluido en el contenido principal
                 var styledHtml = $@"
@@ -204,7 +211,7 @@ namespace ContratosPdfApi.Services
     <table class='contract-header'>
         <tr>
             <td rowspan='3' class='header-cell-logo'>
-                <img src='http://localhost:5221/assets/logo-hidalgo.png' alt='Logo' class='logo-img'>
+                <img src='{baseUrl}/assets/logo-hidalgo.png' alt='Logo' class='logo-img'>
             </td>
             <td rowspan='3' class='header-cell-title'>
                 CONTRATO PARA LA ADQUISICIÓN DE BIENES
