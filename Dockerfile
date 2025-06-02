@@ -26,11 +26,11 @@ FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
 # Copiar el archivo de proyecto
-COPY ["ContratosPdfApi.csproj", "ContratosPdfApi/"]
+COPY ["ContratosPdfApi/ContratosPdfApi.csproj", "ContratosPdfApi/"]
 RUN dotnet restore "ContratosPdfApi/ContratosPdfApi.csproj"
 
 # Copiar todo el código fuente
-COPY . ContratosPdfApi/
+COPY ContratosPdfApi/ ContratosPdfApi/
 WORKDIR "/src/ContratosPdfApi"
 RUN dotnet build "ContratosPdfApi.csproj" -c Release -o /app/build
 
