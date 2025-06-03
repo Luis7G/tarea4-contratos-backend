@@ -9,41 +9,47 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// Configurar CORS - ACTUALIZADO PARA PRODUCCIÓN
+// Configurar CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
         policy.WithOrigins(
-                "http://localhost:4200", // Para desarrollo local
-                "https://contrato-bienes-frontend.netlify.app", // CORREGIDO: sin barra diagonal al final
-                "https://*.netlify.app", // Para subdominios de Netlify
-                "https://*.render.com" // Para otros servicios en Render
+                "http://localhost:4200",
+                "https://contrato-bienes-frontend.netlify.app",
+                "https://*.netlify.app",
+                "https://*.render.com"
               )
               .AllowAnyHeader()
               .AllowAnyMethod()
-              .AllowCredentials(); // Agregar esto para mejorar compatibilidad
-
+              .AllowCredentials();
     });
 });
 
-// Configurar DinkToPdf - MEJORADO PARA LINUX/PRODUCCIÓN
+// Configurar DinkToPdf con mejor manejo de errores
 try
 {
     var isProduction = builder.Environment.IsProduction();
 
+    Console.WriteLine($"Configurando DinkToPdf - Ambiente: {builder.Environment.EnvironmentName}");
+    Console.WriteLine($"Es producción: {isProduction}");
+    Console.WriteLine($"OS Platform: {Environment.OSVersion.Platform}");
+
     if (isProduction || Environment.OSVersion.Platform == PlatformID.Unix)
     {
-        // En producción (Linux), usar wkhtmltopdf del sistema
         Console.WriteLine("Configurando DinkToPdf para Linux/Producción");
 
-        // Verificar que wkhtmltopdf esté disponible
+        // Verificar variables de entorno
+        var ldLibraryPath = Environment.GetEnvironmentVariable("LD_LIBRARY_PATH");
+        Console.WriteLine($"LD_LIBRARY_PATH: {ldLibraryPath}");
+
+        // Verificar si wkhtmltopdf está disponible
         try
         {
             var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
             {
-                FileName = "wkhtmltopdf",
-                Arguments = "--version",
+                FileName = "which",
+                Arguments = "wkhtmltopdf",
                 RedirectStandardOutput = true,
                 UseShellExecute = false
             });
@@ -51,56 +57,63 @@ try
             if (process != null)
             {
                 process.WaitForExit();
-                var output = process.StandardOutput.ReadToEnd();
-                Console.WriteLine($"wkhtmltopdf encontrado: {output}");
+                var wkhtmltopdfPath = process.StandardOutput.ReadToEnd().Trim();
+                Console.WriteLine($"wkhtmltopdf path: {wkhtmltopdfPath}");
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error verificando wkhtmltopdf: {ex.Message}");
+            Console.WriteLine($"Error verificando wkhtmltopdf path: {ex.Message}");
         }
 
-        // Para Linux, DinkToPdf usa wkhtmltopdf del sistema automáticamente
+        // Buscar librerías wkhtmltox
+        var possiblePaths = new[]
+        {
+            "/usr/local/lib/libwkhtmltox.so",
+            "/usr/lib/libwkhtmltox.so",
+            "/lib/libwkhtmltox.so",
+            "/usr/local/lib/libwkhtmltox.so.0",
+            "/usr/lib/x86_64-linux-gnu/libwkhtmltox.so"
+        };
+
+        foreach (var path in possiblePaths)
+        {
+            if (File.Exists(path))
+            {
+                Console.WriteLine($"Librería encontrada en: {path}");
+            }
+        }
+
+        // Configurar DinkToPdf
         builder.Services.AddSingleton(typeof(IConverter), new SynchronizedConverter(new PdfTools()));
+        Console.WriteLine("DinkToPdf configurado para Linux");
     }
     else
     {
-        // En desarrollo (Windows), usar la DLL local
+        // Configuración para Windows (desarrollo)
         var context = new CustomAssemblyLoadContext();
         var basePath = Directory.GetCurrentDirectory();
         var libraryPath = Path.Combine(basePath, "libwkhtmltox.dll");
 
-        Console.WriteLine($"Configurando DinkToPdf para Windows");
-        Console.WriteLine($"Cargando DLL desde: {libraryPath}");
+        Console.WriteLine($"Configurando DinkToPdf para Windows - Path: {libraryPath}");
         Console.WriteLine($"¿Archivo existe?: {File.Exists(libraryPath)}");
 
         if (File.Exists(libraryPath))
         {
             context.LoadUnmanagedLibrary(libraryPath);
-            builder.Services.AddSingleton(typeof(IConverter), new SynchronizedConverter(new PdfTools()));
-            Console.WriteLine("DinkToPdf configurado exitosamente para desarrollo");
         }
-        else
-        {
-            Console.WriteLine("ERROR: libwkhtmltox.dll no encontrado");
-            // Fallback: intentar usar PdfTools sin cargar DLL
-            builder.Services.AddSingleton(typeof(IConverter), new SynchronizedConverter(new PdfTools()));
-        }
+
+        builder.Services.AddSingleton(typeof(IConverter), new SynchronizedConverter(new PdfTools()));
+        Console.WriteLine("DinkToPdf configurado para Windows");
     }
 }
 catch (Exception ex)
 {
-    Console.WriteLine($"Error configurando DinkToPdf: {ex.Message}");
-    // Fallback básico
-    try
-    {
-        builder.Services.AddSingleton(typeof(IConverter), new SynchronizedConverter(new PdfTools()));
-        Console.WriteLine("Configuración fallback de DinkToPdf aplicada");
-    }
-    catch (Exception fallbackEx)
-    {
-        Console.WriteLine($"Error en configuración fallback: {fallbackEx.Message}");
-    }
+    Console.WriteLine($"ERROR configurando DinkToPdf: {ex.Message}");
+    Console.WriteLine($"Stack trace: {ex.StackTrace}");
+
+    // Continuar sin DinkToPdf por ahora
+    Console.WriteLine("Continuando sin DinkToPdf...");
 }
 
 // Registrar servicios
@@ -117,7 +130,6 @@ if (app.Environment.IsDevelopment())
 }
 else
 {
-    // En producción también mostrar Swagger para testing
     app.UseSwagger();
     app.UseSwaggerUI(c =>
     {
@@ -126,21 +138,11 @@ else
     });
 }
 
-// Servir archivos estáticos
 app.UseStaticFiles();
-
 app.UseCors("AllowFrontend");
 app.UseAuthorization();
 app.MapControllers();
 
-app.MapGet("/api/test-cors", () => Results.Ok(new
-{
-    message = "CORS funcionando correctamente",
-    timestamp = DateTime.UtcNow,
-    headers = "OK"
-}));
-
-// Health check endpoint
 app.MapGet("/health", () => Results.Ok(new
 {
     status = "healthy",
@@ -150,7 +152,5 @@ app.MapGet("/health", () => Results.Ok(new
 
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 Console.WriteLine($"Servidor iniciado en puerto {port}");
-Console.WriteLine($"Ambiente: {app.Environment.EnvironmentName}");
-Console.WriteLine("Swagger disponible en /swagger");
 
 app.Run($"http://0.0.0.0:{port}");
