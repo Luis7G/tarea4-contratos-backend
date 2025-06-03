@@ -16,11 +16,14 @@ builder.Services.AddCors(options =>
     {
         policy.WithOrigins(
                 "http://localhost:4200", // Para desarrollo local
-                "https://contrato-bienes-frontend.netlify.app/", // Reemplaza con tu dominio de frontend
+                "https://contrato-bienes-frontend.netlify.app", // CORREGIDO: sin barra diagonal al final
+                "https://*.netlify.app", // Para subdominios de Netlify
                 "https://*.render.com" // Para otros servicios en Render
               )
               .AllowAnyHeader()
-              .AllowAnyMethod();
+              .AllowAnyMethod()
+                            .AllowCredentials(); // Agregar esto para mejorar compatibilidad
+
     });
 });
 
