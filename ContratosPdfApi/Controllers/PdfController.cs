@@ -231,34 +231,7 @@ namespace ContratosPdfApi.Controllers
             }
         }
 
-        [HttpPost("generate-from-data")]
-        public IActionResult GeneratePdfFromData([FromBody] ContratoData contratoData)
-        {
-            try
-            {
-                _logger.LogInformation("Generando PDF desde ContratoData");
-
-                if (contratoData == null)
-                {
-                    return BadRequest("ContratoData is required.");
-                }
-
-                var htmlContent = _pdfService.GenerateContractHtml(contratoData);
-                var pdfBytes = _pdfService.GeneratePdfFromHtml(htmlContent);
-
-                if (pdfBytes == null || pdfBytes.Length == 0)
-                {
-                    return StatusCode(500, "Error generating PDF.");
-                }
-
-                return File(pdfBytes, "application/pdf", $"contrato_{contratoData.NombreContratista}.pdf");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error en GeneratePdfFromData: {Message}", ex.Message);
-                return StatusCode(500, $"Error generating PDF: {ex.Message}");
-            }
-        }
+        
 
         [HttpGet("health")]
         public IActionResult Health()

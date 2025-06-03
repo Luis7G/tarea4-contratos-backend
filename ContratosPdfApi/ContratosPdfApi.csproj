@@ -9,6 +9,12 @@
   <ItemGroup>
     <PackageReference Include="DinkToPdf" Version="1.0.8" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
+	<PackageReference Include="Dapper" Version="2.1.35" />
+	<PackageReference Include="Microsoft.Data.SqlClient" Version="6.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Models\DTOs\" />
   </ItemGroup>
 
 </Project>

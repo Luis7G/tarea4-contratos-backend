@@ -1,6 +1,7 @@
 using ContratosPdfApi.Services;
 using DinkToPdf;
 using DinkToPdf.Contracts;
+using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -116,9 +117,17 @@ catch (Exception ex)
     Console.WriteLine("Continuando sin DinkToPdf...");
 }
 
-// Registrar servicios
+// Registrar servicios de Dapper/SQL
+builder.Services.AddScoped<IArchivoService, ArchivoService>();
+builder.Services.AddScoped<IContratoService, ContratoService>();
 builder.Services.AddScoped<IPdfService, PdfService>();
 builder.Services.AddHostedService<TempFileCleanupService>();
+
+// Configurar wwwroot para archivos estáticos
+builder.Services.Configure<StaticFileOptions>(options =>
+{
+    options.ServeUnknownFileTypes = true;
+});
 
 var app = builder.Build();
 
@@ -138,10 +147,44 @@ else
     });
 }
 
-app.UseStaticFiles();
+// Configurar archivos estáticos ANTES de UseCors
+app.UseStaticFiles(new StaticFileOptions
+{
+    ServeUnknownFileTypes = true,
+    DefaultContentType = "application/octet-stream"
+});
+
+// También puedes agregar configuración específica para assets
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(
+        Path.Combine(builder.Environment.ContentRootPath, "wwwroot", "assets")),
+    RequestPath = "/assets"
+}); 
+
 app.UseCors("AllowFrontend");
 app.UseAuthorization();
 app.MapControllers();
+
+// Crear directorios necesarios al inicio
+var webRootPath = app.Environment.WebRootPath;
+var directoriosNecesarios = new[]
+{
+    "Uploads/Contratos/Bienes/PDFs",
+    "Uploads/Contratos/Bienes/TablaCantidades",
+    "Uploads/Contratos/Bienes/Respaldos",
+    "Uploads/Contratos/Servicios",
+    "Uploads/Contratos/Obras",
+    "Uploads/Contratos/Consultoria",
+    "Uploads/Temp"
+};
+
+foreach (var directorio in directoriosNecesarios)
+{
+    var rutaCompleta = Path.Combine(webRootPath, directorio);
+    Directory.CreateDirectory(rutaCompleta);
+}
+
 
 app.MapGet("/health", () => Results.Ok(new
 {
@@ -149,6 +192,7 @@ app.MapGet("/health", () => Results.Ok(new
     timestamp = DateTime.UtcNow,
     environment = app.Environment.EnvironmentName
 }));
+
 
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 Console.WriteLine($"Servidor iniciado en puerto {port}");
