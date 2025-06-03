@@ -22,7 +22,7 @@ builder.Services.AddCors(options =>
               )
               .AllowAnyHeader()
               .AllowAnyMethod()
-                            .AllowCredentials(); // Agregar esto para mejorar compatibilidad
+              .AllowCredentials(); // Agregar esto para mejorar compatibilidad
 
     });
 });
@@ -132,6 +132,13 @@ app.UseStaticFiles();
 app.UseCors("AllowFrontend");
 app.UseAuthorization();
 app.MapControllers();
+
+app.MapGet("/api/test-cors", () => Results.Ok(new
+{
+    message = "CORS funcionando correctamente",
+    timestamp = DateTime.UtcNow,
+    headers = "OK"
+}));
 
 // Health check endpoint
 app.MapGet("/health", () => Results.Ok(new
