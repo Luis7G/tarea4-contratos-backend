@@ -16,7 +16,7 @@ builder.Services.AddCors(options =>
     {
         policy.WithOrigins(
                 "http://localhost:4200", // Para desarrollo local
-                "https://your-frontend-domain.com", // Reemplaza con tu dominio de frontend
+                "https://contrato-bienes-frontend.netlify.app/", // Reemplaza con tu dominio de frontend
                 "https://*.render.com" // Para otros servicios en Render
               )
               .AllowAnyHeader()
