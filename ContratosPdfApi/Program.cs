@@ -190,7 +190,15 @@ app.UseStaticFiles(new StaticFileOptions
     FileProvider = new PhysicalFileProvider(
         Path.Combine(builder.Environment.ContentRootPath, "wwwroot", "assets")),
     RequestPath = "/assets"
-}); 
+});
+
+// AGREGAR: Configurar archivos estáticos para archivos temporales
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(
+        Path.Combine(app.Environment.WebRootPath, "temp")),
+    RequestPath = "/temp"
+});
 
 app.UseCors("AllowFrontend");
 app.UseAuthorization();
