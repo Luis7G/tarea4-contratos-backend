@@ -375,5 +375,107 @@ namespace ContratosPdfApi.Controllers
             }
         }
 
+        // AGREGAR este endpoint temporal:
+
+        [HttpPost("create-functions")]
+        public async Task<IActionResult> CreateFunctions()
+        {
+            try
+            {
+                using var connection = _dbHelper.CreateConnection();
+
+                var funcionScripts = new[]
+                {
+            // Función insertar_archivo
+            @"CREATE OR REPLACE FUNCTION insertar_archivo(
+                p_nombre_original VARCHAR,
+                p_nombre_archivo VARCHAR,
+                p_ruta_archivo VARCHAR,
+                p_tipo_mime VARCHAR,
+                p_tamaño BIGINT,
+                p_tipo_archivo VARCHAR,
+                p_hash_sha256 VARCHAR,
+                p_usuario_id INTEGER
+            ) RETURNS INTEGER AS $$
+            DECLARE
+                nuevo_id INTEGER;
+            BEGIN
+                INSERT INTO Archivos (
+                    NombreOriginal, NombreArchivo, RutaArchivo, TipoMIME, 
+                    Tamaño, TipoArchivo, HashSHA256, UsuarioId
+                ) VALUES (
+                    p_nombre_original, p_nombre_archivo, p_ruta_archivo, p_tipo_mime,
+                    p_tamaño, p_tipo_archivo, p_hash_sha256, p_usuario_id
+                ) RETURNING Id INTO nuevo_id;
+                
+                RETURN nuevo_id;
+            END;
+            $$ LANGUAGE plpgsql;",
+            
+            // Función insertar_contrato
+            @"CREATE OR REPLACE FUNCTION insertar_contrato(
+                p_tipo_contrato_id INTEGER,
+                p_numero_contrato VARCHAR,
+                p_nombre_contratista VARCHAR,
+                p_ruc_contratista VARCHAR,
+                p_monto_contrato DECIMAL,
+                p_fecha_firma_contrato DATE,
+                p_usuario_creador_id INTEGER,
+                p_datos_especificos JSONB DEFAULT NULL
+            ) RETURNS INTEGER AS $$
+            DECLARE
+                nuevo_contrato_id INTEGER;
+            BEGIN
+                INSERT INTO Contratos (
+                    TipoContratoId, NumeroContrato, NombreContratista, RucContratista,
+                    MontoContrato, FechaFirmaContrato, UsuarioCreadorId, Estado
+                ) VALUES (
+                    p_tipo_contrato_id, p_numero_contrato, p_nombre_contratista, p_ruc_contratista,
+                    p_monto_contrato, p_fecha_firma_contrato, p_usuario_creador_id, 'Activo'
+                ) RETURNING Id INTO nuevo_contrato_id;
+                
+                IF p_datos_especificos IS NOT NULL THEN
+                    INSERT INTO ContratoDetalles (ContratoId, DatosEspecificos)
+                    VALUES (nuevo_contrato_id, p_datos_especificos);
+                END IF;
+                
+                RETURN nuevo_contrato_id;
+            END;
+            $$ LANGUAGE plpgsql;"
+        };
+
+                var results = new List<string>();
+
+                foreach (var script in funcionScripts)
+                {
+                    try
+                    {
+                        await connection.ExecuteAsync(script);
+                        results.Add($"✅ Función creada correctamente");
+                    }
+                    catch (Exception ex)
+                    {
+                        results.Add($"❌ Error creando función: {ex.Message}");
+                    }
+                }
+
+                // Verificar que las funciones se crearon
+                var funciones = await connection.QueryAsync<string>(
+                    "SELECT routine_name FROM information_schema.routines WHERE routine_type = 'FUNCTION' AND routine_schema = 'public'"
+                );
+
+                return Ok(new
+                {
+                    message = "Funciones creadas",
+                    results = results,
+                    funcionesExistentes = funciones.ToList()
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+        }
+
     }
 }
