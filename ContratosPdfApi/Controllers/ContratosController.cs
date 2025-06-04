@@ -2,6 +2,7 @@ using System.Text.Json;
 using ContratosPdfApi.Models;
 using ContratosPdfApi.Models.DTOs;
 using ContratosPdfApi.Services;
+using Dapper;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ContratosPdfApi.Controllers
@@ -14,17 +15,22 @@ namespace ContratosPdfApi.Controllers
         private readonly IArchivoService _archivoService;
         private readonly IPdfService _pdfService;
         private readonly ILogger<ContratosController> _logger;
+        private readonly IDatabaseHelper _dbHelper;
+
 
         public ContratosController(
             IContratoService contratoService,
             IArchivoService archivoService,
             IPdfService pdfService,
-            ILogger<ContratosController> logger)
+            ILogger<ContratosController> logger
+            ,
+            IDatabaseHelper dbHelper)
         {
             _contratoService = contratoService;
             _archivoService = archivoService;
             _pdfService = pdfService;
             _logger = logger;
+            _dbHelper = dbHelper;
         }
 
         /// <summary>
@@ -318,6 +324,53 @@ namespace ContratosPdfApi.Controllers
                     success = false,
                     message = "Error interno del servidor",
                     details = ex.Message
+                });
+            }
+        }
+
+        [HttpGet("database-status")]
+        public async Task<IActionResult> DatabaseStatus()
+        {
+            try
+            {
+                using var connection = _dbHelper.CreateConnection();
+
+                // Verificar tablas existentes
+                var tablas = await connection.QueryAsync<string>(
+                    _dbHelper.IsPostgreSQL
+                        ? "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
+                        : "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'"
+                );
+
+                // Verificar tipos de contrato si la tabla existe
+                List<dynamic>? tiposContrato = null;
+                if (tablas.Contains("tiposcontrato") || tablas.Contains("TiposContrato"))
+                {
+                    tiposContrato = (await connection.QueryAsync<dynamic>("SELECT * FROM TiposContrato")).ToList();
+                }
+
+                // Verificar usuarios
+                List<dynamic>? usuarios = null;
+                if (tablas.Contains("usuarios") || tablas.Contains("Usuarios"))
+                {
+                    usuarios = (await connection.QueryAsync<dynamic>("SELECT * FROM Usuarios")).ToList();
+                }
+
+                return Ok(new
+                {
+                    DatabaseProvider = _dbHelper.IsPostgreSQL ? "PostgreSQL" : "SQL Server",
+                    TablasExistentes = tablas.ToList(),
+                    TiposContrato = tiposContrato,
+                    Usuarios = usuarios,
+                    DatabaseConnected = true
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    error = ex.Message,
+                    DatabaseConnected = false
                 });
             }
         }
