@@ -113,7 +113,10 @@ namespace ContratosPdfApi.Services
         {
             if (_provider == "PostgreSQL")
             {
-                return "SELECT insertar_archivo(@NombreOriginal, @NombreArchivo, @RutaArchivo, @TipoMIME, @Tamaño, @TipoArchivo, @HashSHA256, @UsuarioId)";
+                // PostgreSQL: Query directo sin función
+                return @"INSERT INTO Archivos (NombreOriginal, NombreArchivo, RutaArchivo, TipoMIME, Tamaño, TipoArchivo, HashSHA256, UsuarioId) 
+                 VALUES (@NombreOriginal, @NombreArchivo, @RutaArchivo, @TipoMIME, @Tamaño, @TipoArchivo, @HashSHA256, @UsuarioId) 
+                 RETURNING Id";
             }
             else
             {
@@ -125,7 +128,10 @@ namespace ContratosPdfApi.Services
         {
             if (_provider == "PostgreSQL")
             {
-                return "SELECT insertar_contrato(@TipoContratoId, @NumeroContrato, @NombreContratista, @RucContratista, @MontoContrato, @FechaFirmaContrato, @UsuarioCreadorId, @DatosEspecificos::jsonb)";
+                // PostgreSQL: Query directo sin función
+                return @"INSERT INTO Contratos (TipoContratoId, NumeroContrato, NombreContratista, RucContratista, MontoContrato, FechaFirmaContrato, UsuarioCreadorId, Estado) 
+                 VALUES (@TipoContratoId, @NumeroContrato, @NombreContratista, @RucContratista, @MontoContrato, @FechaFirmaContrato, @UsuarioCreadorId, 'Activo') 
+                 RETURNING Id";
             }
             else
             {

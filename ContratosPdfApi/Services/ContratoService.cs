@@ -82,8 +82,17 @@ namespace ContratosPdfApi.Services
 
                 if (_dbHelper.IsPostgreSQL)
                 {
-                    // PostgreSQL: Ejecutar función directamente
+                    // PostgreSQL: Ejecutar query directo
                     contratoId = await connection.QuerySingleAsync<int>(insertSql, parametros);
+
+                    // Insertar datos específicos si existen (separado)
+                    if (!string.IsNullOrEmpty(datosEspecificosJson))
+                    {
+                        await connection.ExecuteAsync(
+                            "INSERT INTO ContratoDetalles (ContratoId, DatosEspecificos) VALUES (@ContratoId, @DatosEspecificos::jsonb)",
+                            new { ContratoId = contratoId, DatosEspecificos = datosEspecificosJson }
+                        );
+                    }
                 }
                 else
                 {

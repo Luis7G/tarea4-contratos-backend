@@ -82,9 +82,11 @@ namespace ContratosPdfApi.Services
 
                 int archivoId;
 
+                // REEMPLAZAR el bloque de inserción del archivo:
+
                 if (_dbHelper.IsPostgreSQL)
                 {
-                    // PostgreSQL: Ejecutar función directamente
+                    // PostgreSQL: Ejecutar query directo
                     archivoId = await connection.QuerySingleAsync<int>(insertSql, new
                     {
                         NombreOriginal = archivo.FileName,
