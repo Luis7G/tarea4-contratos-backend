@@ -218,17 +218,39 @@ namespace ContratosPdfApi.Services
             var contratos = await connection.QueryAsync<ContratoResponseDto>(sql, parameters);
             return contratos.ToList();
         }
+        // BUSCAR el método ActualizarPdfContratoAsync y REEMPLAZARLO:
 
-        public async Task ActualizarPdfContratoAsync(int contratoId, int archivoPdfId)
+        private async Task ActualizarPdfContratoAsync(int contratoId, int archivoPdfId)
         {
-            //using var connection = new SqlConnection(_connectionString);
-            using var connection = _dbHelper.CreateConnection();
+            try
+            {
+                using var connection = _dbHelper.CreateConnection();
 
-            await connection.ExecuteAsync(
-                "SP_ActualizarPdfContrato",
-                new { ContratoId = contratoId, ArchivoPdfGeneradoId = archivoPdfId },
-                commandType: System.Data.CommandType.StoredProcedure
-            );
+                if (_dbHelper.IsPostgreSQL)
+                {
+                    // PostgreSQL: Query directo
+                    await connection.ExecuteAsync(
+                        "UPDATE Contratos SET ArchivoPdfGeneradoId = @ArchivoPdfGeneradoId WHERE Id = @ContratoId",
+                        new { ContratoId = contratoId, ArchivoPdfGeneradoId = archivoPdfId }
+                    );
+                }
+                else
+                {
+                    // SQL Server: Stored procedure
+                    await connection.ExecuteAsync(
+                        "SP_ActualizarPdfContrato",
+                        new { ContratoId = contratoId, ArchivoPdfGeneradoId = archivoPdfId },
+                        commandType: System.Data.CommandType.StoredProcedure
+                    );
+                }
+
+                _logger.LogInformation($"✅ PDF asociado al contrato {contratoId}: archivo {archivoPdfId}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Error actualizando PDF del contrato {ContratoId}: {Error}", contratoId, ex.Message);
+                throw;
+            }
         }
 
 
@@ -248,6 +270,11 @@ namespace ContratosPdfApi.Services
         Task IContratoService.AsociarArchivoContratoAsync(int contratoId, int archivoId)
         {
             return AsociarArchivoContratoAsync(contratoId, archivoId);
+        }
+
+        Task IContratoService.ActualizarPdfContratoAsync(int contratoId, int archivoPdfId)
+        {
+            return ActualizarPdfContratoAsync(contratoId, archivoPdfId);
         }
     }
 }
