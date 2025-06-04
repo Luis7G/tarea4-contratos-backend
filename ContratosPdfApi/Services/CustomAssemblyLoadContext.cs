@@ -1,4 +1,3 @@
-// filepath: ContratosPdfApi/Services/CustomAssemblyLoadContext.cs
 using System.Reflection;
 using System.Runtime.Loader;
 

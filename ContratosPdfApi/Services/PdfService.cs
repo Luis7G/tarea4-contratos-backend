@@ -26,7 +26,7 @@ namespace ContratosPdfApi.Services
 
                 // Determinar la URL base según el ambiente
                 var baseUrl = _environment.IsDevelopment()
-                    ? "http://localhost:5221"
+                    ? "http://localhost:8080"
                     : Environment.GetEnvironmentVariable("RENDER_EXTERNAL_URL") ?? "https://contratos-pdf-api.onrender.com";
 
                 // HTML completo con header incluido en el contenido principal
@@ -295,10 +295,6 @@ namespace ContratosPdfApi.Services
             }
         }
 
-        public string GenerateContractHtml(ContratoData contratoData)
-        {
-            _logger.LogWarning("GenerateContractHtml no está implementado completamente.");
-            return $"<h1>Contrato para {contratoData.NombreContratista}</h1><p>Detalles del contrato...</p>";
-        }
+
     }
 }
