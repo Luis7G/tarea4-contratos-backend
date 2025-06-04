@@ -59,6 +59,16 @@ FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
 
+# Crear directorios necesarios
+RUN mkdir -p wwwroot/Uploads/Contratos/Bienes/PDFs \
+    && mkdir -p wwwroot/Uploads/Contratos/Bienes/TablaCantidades \
+    && mkdir -p wwwroot/Uploads/Contratos/Bienes/Respaldos \
+    && mkdir -p wwwroot/Uploads/Contratos/Servicios \
+    && mkdir -p wwwroot/Uploads/Contratos/Obras \
+    && mkdir -p wwwroot/Uploads/Contratos/Consultoria \
+    && mkdir -p wwwroot/Uploads/Temp \
+    && mkdir -p wwwroot/temp
+
 # Copiar wwwroot desde el build stage (incluye assets)
 COPY --from=build /src/ContratosPdfApi/wwwroot ./wwwroot/
 
@@ -67,6 +77,7 @@ RUN mkdir -p wwwroot/temp
 
 # Configurar variables de entorno para librerías
 ENV LD_LIBRARY_PATH="/usr/local/lib:/usr/lib:/lib"
+ENV ASPNETCORE_URLS=http://0.0.0.0:8080
 ENV ASPNETCORE_ENVIRONMENT=Production
 
 # Verificación final
