@@ -1,18 +1,20 @@
 using ContratosPdfApi.Models.DTOs;
 using Dapper;
 using Microsoft.Data.SqlClient;
+using Npgsql;
 using System.Text.Json;
 
 namespace ContratosPdfApi.Services
 {
     public class ContratoService : IContratoService
     {
-        private readonly string _connectionString;
+        // private readonly string _connectionString;
+        private readonly IDatabaseHelper _dbHelper;
         private readonly ILogger<ContratoService> _logger;
 
-        public ContratoService(IConfiguration configuration, ILogger<ContratoService> logger)
+        public ContratoService(IDatabaseHelper dbHelper, ILogger<ContratoService> logger)
         {
-            _connectionString = configuration.GetConnectionString("DefaultConnection")!;
+            _dbHelper = dbHelper;
             _logger = logger;
         }
 
@@ -24,11 +26,11 @@ namespace ContratosPdfApi.Services
         {
             try
             {
-                using var connection = new SqlConnection(_connectionString);
+                using var connection = _dbHelper.CreateConnection();  // ← NUEVO: usar DatabaseHelper
 
-                // Obtener ID del tipo de contrato
+                // Obtener ID del tipo de contrato (igual para ambas BD)
                 var tipoContrato = await connection.QuerySingleOrDefaultAsync<dynamic>(
-                    "SELECT Id FROM TiposContrato WHERE Codigo = @Codigo AND Activo = 1",
+                    "SELECT Id FROM TiposContrato WHERE Codigo = @Codigo AND Activo = true",  // ← true para PostgreSQL, 1 para SQL Server funciona igual
                     new { Codigo = contratoDto.TipoContratoCodigo }
                 );
 
@@ -55,27 +57,39 @@ namespace ContratosPdfApi.Services
                     datosEspecificosJson = JsonSerializer.Serialize(contratoDto.DatosEspecificos);
                 }
 
-                // LOG para debugging - ver qué datos llegan
                 _logger.LogInformation($"📋 Datos del contrato: Nombre='{contratoDto.NombreContratista}', RUC='{contratoDto.RucContratista}', Monto={contratoDto.MontoContrato}");
 
-                // Insertar contrato
-                var contratoId = await connection.QuerySingleAsync<int>(
-                    "SP_InsertarContrato",
-                    new
-                    {
-                        TipoContratoId = (int)tipoContrato.Id,
-                        NumeroContrato = contratoDto.NumeroContrato,
-                        NombreContratista = contratoDto.NombreContratista?.Trim(),
-                        RucContratista = contratoDto.RucContratista?.Trim(),
-                        MontoContrato = contratoDto.MontoContrato,
-                        FechaFirmaContrato = fechaFirma,
-                        UsuarioCreadorId = contratoDto.UsuarioCreadorId ?? 1, // Default a 1 si es null
-                        DatosEspecificos = datosEspecificosJson
-                    },
-                    commandType: System.Data.CommandType.StoredProcedure
-                );
+                // ═══════════════════════════════════════════════════════════
+                // INSERTAR CONTRATO - COMPATIBLE CON AMBOS PROVEEDORES
+                // ═══════════════════════════════════════════════════════════
 
-                // Asociar archivos si se proporcionaron
+                var insertSql = _dbHelper.GetInsertContratoSql();
+                int contratoId;
+
+                var parametros = new
+                {
+                    TipoContratoId = (int)tipoContrato.Id,
+                    NumeroContrato = contratoDto.NumeroContrato,
+                    NombreContratista = contratoDto.NombreContratista?.Trim(),
+                    RucContratista = contratoDto.RucContratista?.Trim(),
+                    MontoContrato = contratoDto.MontoContrato,
+                    FechaFirmaContrato = fechaFirma,
+                    UsuarioCreadorId = contratoDto.UsuarioCreadorId ?? 1,
+                    DatosEspecificos = datosEspecificosJson
+                };
+
+                if (_dbHelper.IsPostgreSQL)
+                {
+                    // PostgreSQL: Ejecutar función directamente
+                    contratoId = await connection.QuerySingleAsync<int>(insertSql, parametros);
+                }
+                else
+                {
+                    // SQL Server: Ejecutar stored procedure
+                    contratoId = await connection.QuerySingleAsync<int>(insertSql, parametros, commandType: System.Data.CommandType.StoredProcedure);
+                }
+
+                // Asociar archivos si se proporcionaron (igual para ambas BD)
                 if (contratoDto.ArchivosAsociados?.Any() == true)
                 {
                     foreach (var archivoId in contratoDto.ArchivosAsociados)
@@ -96,92 +110,89 @@ namespace ContratosPdfApi.Services
             }
         }
 
+        // Métodos privados (actualizados para usar _dbHelper)
+        public async Task AsociarArchivoContratoAsync(int contratoId, int archivoId)
+        {
+            using var connection = _dbHelper.CreateConnection();
+            await connection.ExecuteAsync(
+                "INSERT INTO ContratoArchivos (ContratoId, ArchivoId) VALUES (@ContratoId, @ArchivoId)",
+                new { ContratoId = contratoId, ArchivoId = archivoId }
+            );
+        }
+
         public async Task<ContratoResponseDto?> ObtenerContratoPorIdAsync(int id)
         {
-            using var connection = new SqlConnection(_connectionString);
-            
-            // Usar multiple result sets del SP
-            using var multi = await connection.QueryMultipleAsync(
-                "SP_ObtenerContratoPorId",
-                new { ContratoId = id },
-                commandType: System.Data.CommandType.StoredProcedure
+            using var connection = _dbHelper.CreateConnection();
+
+            var contrato = await connection.QuerySingleOrDefaultAsync<ContratoResponseDto>(
+                @"SELECT c.Id, c.NumeroContrato, c.NombreContratista, c.RucContratista,
+                 c.MontoContrato, c.FechaFirmaContrato, c.Estado, c.FechaCreacion,
+                 c.UsuarioCreadorId, tc.Codigo as TipoContratoCodigo, tc.Nombre as TipoContratoNombre
+          FROM Contratos c 
+          INNER JOIN TiposContrato tc ON c.TipoContratoId = tc.Id 
+          WHERE c.Id = @Id",
+                new { Id = id }
             );
 
-            var contrato = await multi.ReadSingleOrDefaultAsync<dynamic>();
-            if (contrato == null) return null;
-
-            var archivos = (await multi.ReadAsync<ArchivoResponseDto>()).ToList();
-            var datosEspecificos = await multi.ReadSingleOrDefaultAsync<string>();
-
-            return new ContratoResponseDto
+            if (contrato != null)
             {
-                Id = contrato.Id,
-                TipoContratoCodigo = contrato.TipoContratoCodigo,
-                TipoContratoNombre = contrato.TipoContratoNombre,
-                NumeroContrato = contrato.NumeroContrato,
-                NombreContratista = contrato.NombreContratista,
-                RucContratista = contrato.RucContratista,
-                MontoContrato = contrato.MontoContrato,
-                FechaFirmaContrato = contrato.FechaFirmaContrato,
-                Estado = contrato.Estado,
-                FechaCreacion = contrato.FechaCreacion,
-                UsuarioCreadorNombre = contrato.UsuarioCreadorNombre,
-                Archivos = archivos,
-                DatosEspecificos = !string.IsNullOrEmpty(datosEspecificos) 
-                    ? JsonSerializer.Deserialize<object>(datosEspecificos) 
-                    : null
-            };
+                // Obtener archivos asociados
+                var archivos = await connection.QueryAsync<ArchivoResponseDto>(
+                    @"SELECT a.* FROM Archivos a 
+              INNER JOIN ContratoArchivos ca ON a.Id = ca.ArchivoId 
+              WHERE ca.ContratoId = @ContratoId",
+                    new { ContratoId = id }
+                );
+                contrato.Archivos = archivos.ToList();
+            }
+
+            return contrato;
         }
 
         public async Task<List<ContratoResponseDto>> ListarContratosAsync(string? tipoContrato = null, string? estado = null, int pageNumber = 1, int pageSize = 10)
         {
-            using var connection = new SqlConnection(_connectionString);
-            
-            // Obtener TipoContratoId si se proporciona el código
-            int? tipoContratoId = null;
+            using var connection = _dbHelper.CreateConnection();
+
+            var whereConditions = new List<string>();
+            var parameters = new DynamicParameters();
+
             if (!string.IsNullOrEmpty(tipoContrato))
             {
-                var tipo = await connection.QuerySingleOrDefaultAsync<dynamic>(
-                    "SELECT Id FROM TiposContrato WHERE Codigo = @Codigo AND Activo = 1",
-                    new { Codigo = tipoContrato }
-                );
-                tipoContratoId = tipo?.Id;
+                whereConditions.Add("tc.Codigo = @TipoContrato");
+                parameters.Add("TipoContrato", tipoContrato);
             }
 
-            using var multi = await connection.QueryMultipleAsync(
-                "SP_ListarContratos",
-                new
-                {
-                    TipoContratoId = tipoContratoId,
-                    Estado = estado,
-                    PageNumber = pageNumber,
-                    PageSize = pageSize
-                },
-                commandType: System.Data.CommandType.StoredProcedure
-            );
-
-            var contratos = await multi.ReadAsync<dynamic>();
-            var total = await multi.ReadSingleAsync<int>();
-
-            return contratos.Select(c => new ContratoResponseDto
+            if (!string.IsNullOrEmpty(estado))
             {
-                Id = c.Id,
-                TipoContratoCodigo = c.TipoContratoCodigo,
-                TipoContratoNombre = c.TipoContratoNombre,
-                NumeroContrato = c.NumeroContrato,
-                NombreContratista = c.NombreContratista,
-                RucContratista = c.RucContratista,
-                MontoContrato = c.MontoContrato,
-                FechaFirmaContrato = c.FechaFirmaContrato,
-                Estado = c.Estado,
-                FechaCreacion = c.FechaCreacion,
-                UsuarioCreadorNombre = c.UsuarioCreadorNombre
-            }).ToList();
+                whereConditions.Add("c.Estado = @Estado");
+                parameters.Add("Estado", estado);
+            }
+
+            var whereClause = whereConditions.Any() ? "WHERE " + string.Join(" AND ", whereConditions) : "";
+
+            var offset = (pageNumber - 1) * pageSize;
+            parameters.Add("Offset", offset);
+            parameters.Add("PageSize", pageSize);
+
+            var sql = $@"
+        SELECT c.Id, c.NumeroContrato, c.NombreContratista, c.RucContratista,
+               c.MontoContrato, c.FechaFirmaContrato, c.Estado, c.FechaCreacion,
+               c.UsuarioCreadorId, tc.Codigo as TipoContratoCodigo, tc.Nombre as TipoContratoNombre
+        FROM Contratos c 
+        INNER JOIN TiposContrato tc ON c.TipoContratoId = tc.Id 
+        {whereClause}
+        ORDER BY c.FechaCreacion DESC
+        " + (_dbHelper.IsPostgreSQL ? "OFFSET @Offset LIMIT @PageSize" : "OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY");
+
+            var contratos = await connection.QueryAsync<ContratoResponseDto>(sql, parameters);
+            return contratos.ToList();
         }
 
         public async Task ActualizarPdfContratoAsync(int contratoId, int archivoPdfId)
         {
-            using var connection = new SqlConnection(_connectionString);
+            //using var connection = new SqlConnection(_connectionString);
+            using var connection = _dbHelper.CreateConnection();
+
             await connection.ExecuteAsync(
                 "SP_ActualizarPdfContrato",
                 new { ContratoId = contratoId, ArchivoPdfGeneradoId = archivoPdfId },
@@ -189,19 +200,13 @@ namespace ContratosPdfApi.Services
             );
         }
 
-        public async Task AsociarArchivoContratoAsync(int contratoId, int archivoId)
-        {
-            using var connection = new SqlConnection(_connectionString);
-            await connection.ExecuteAsync(
-                "SP_AsociarArchivoContrato",
-                new { ContratoId = contratoId, ArchivoId = archivoId },
-                commandType: System.Data.CommandType.StoredProcedure
-            );
-        }
+
 
         public async Task<List<dynamic>> ObtenerTiposContratoAsync()
         {
-            using var connection = new SqlConnection(_connectionString);
+            //using var connection = new SqlConnection(_connectionString);
+            using var connection = _dbHelper.CreateConnection();
+
             var tipos = await connection.QueryAsync<dynamic>(
                 "SP_ObtenerTiposContrato",
                 commandType: System.Data.CommandType.StoredProcedure
