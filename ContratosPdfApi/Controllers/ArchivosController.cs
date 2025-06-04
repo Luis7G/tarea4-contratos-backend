@@ -9,11 +9,14 @@ namespace ContratosPdfApi.Controllers
     public class ArchivosController : ControllerBase
     {
         private readonly IArchivoService _archivoService;
+        private readonly IPdfValidationService _pdfValidationService;
+
         private readonly ILogger<ArchivosController> _logger;
 
-        public ArchivosController(IArchivoService archivoService, ILogger<ArchivosController> logger)
+        public ArchivosController(IArchivoService archivoService, IPdfValidationService pdfValidationService, ILogger<ArchivosController> logger)
         {
             _archivoService = archivoService;
+            _pdfValidationService = pdfValidationService;
             _logger = logger;
         }
 
@@ -70,7 +73,7 @@ namespace ContratosPdfApi.Controllers
             try
             {
                 var archivo = await _archivoService.ObtenerArchivoPorIdAsync(id);
-                
+
                 if (archivo == null)
                 {
                     return NotFound(new { success = false, message = "Archivo no encontrado" });
@@ -94,14 +97,14 @@ namespace ContratosPdfApi.Controllers
             try
             {
                 var archivo = await _archivoService.ObtenerArchivoPorIdAsync(id);
-                
+
                 if (archivo == null)
                 {
                     return NotFound(new { success = false, message = "Archivo no encontrado" });
                 }
 
                 var rutaCompleta = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", archivo.RutaArchivo);
-                
+
                 if (!System.IO.File.Exists(rutaCompleta))
                 {
                     return NotFound(new { success = false, message = "Archivo físico no encontrado" });
@@ -114,6 +117,34 @@ namespace ContratosPdfApi.Controllers
             {
                 _logger.LogError(ex, $"Error al descargar archivo con ID: {id}");
                 return StatusCode(500, new { success = false, message = "Error interno del servidor" });
+            }
+        }
+
+        /// <summary>
+        /// Validar integridad del PDF ANTES de pedir datos
+        /// </summary>
+        [HttpPost("ValidarIntegridad")]
+        public async Task<IActionResult> ValidarIntegridadPdf(IFormFile file)
+        {
+            try
+            {
+                if (file == null || file.Length == 0)
+                {
+                    return BadRequest(new { esValido = false, razon = "No se proporcionó archivo" });
+                }
+
+                var validacion = await _pdfValidationService.ValidarIntegridadPdfAsync(file);
+
+                return Ok(validacion);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al validar integridad del PDF");
+                return StatusCode(500, new
+                {
+                    esValido = false,
+                    razon = "Error interno del servidor"
+                });
             }
         }
     }

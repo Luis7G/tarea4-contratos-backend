@@ -120,6 +120,7 @@ catch (Exception ex)
 // Registrar servicios de Dapper/SQL
 builder.Services.AddScoped<IArchivoService, ArchivoService>();
 builder.Services.AddScoped<IContratoService, ContratoService>();
+builder.Services.AddScoped<IPdfValidationService, PdfValidationService>();
 builder.Services.AddScoped<IPdfService, PdfService>();
 builder.Services.AddHostedService<TempFileCleanupService>();
 
