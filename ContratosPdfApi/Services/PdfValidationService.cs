@@ -148,6 +148,9 @@ namespace ContratosPdfApi.Services
                 
                 if (validacionFirmas.TieneFirmasValidas)
                 {
+
+                    await ActualizarArchivoBaseComparacion(pdfCargado.FileName, pdfOriginal.RutaArchivo);
+
                     // TODO: Aquí implementar comparación byte por byte del contenido SIN las firmas
                     // Por ahora, asumir que si tiene firmas válidas, es compatible
                     return new ComparacionPdfResult
@@ -174,6 +177,15 @@ namespace ContratosPdfApi.Services
                     DiferenciasDetectadas = $"Error en comparación: {ex.Message}"
                 };
             }
+        }
+
+        private async Task ActualizarArchivoBaseComparacion(string nombreArchivoFirmado, string rutaArchivoOriginal)
+        {
+            using var connection = new SqlConnection(_connectionString);
+            await connection.ExecuteAsync(
+                "UPDATE Archivos SET ArchivoBaseParaComparacion = @RutaOriginal WHERE NombreOriginal = @NombreFirmado",
+                new { RutaOriginal = rutaArchivoOriginal, NombreFirmado = nombreArchivoFirmado }
+            );
         }
 
         public async Task<ValidacionFiremaResult> ValidarFiremasDigitalesAsync(IFormFile archivoPdf)

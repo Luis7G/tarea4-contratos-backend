@@ -1,3 +1,4 @@
+using System.Text.Json;
 using ContratosPdfApi.Models;
 using ContratosPdfApi.Models.DTOs;
 using ContratosPdfApi.Services;
@@ -68,7 +69,7 @@ namespace ContratosPdfApi.Controllers
             try
             {
                 var contrato = await _contratoService.ObtenerContratoPorIdAsync(id);
-                
+
                 if (contrato == null)
                 {
                     return NotFound(new { success = false, message = "Contrato no encontrado" });
@@ -137,7 +138,7 @@ namespace ContratosPdfApi.Controllers
                 // Crear archivo temporal para subir
                 var tempFileName = $"contrato_{id}_{DateTime.Now:yyyyMMddHHmmss}.pdf";
                 var tempFilePath = Path.Combine(Path.GetTempPath(), tempFileName);
-                
+
                 await System.IO.File.WriteAllBytesAsync(tempFilePath, pdfBytes);
 
                 // Crear IFormFile desde bytes
@@ -224,5 +225,102 @@ namespace ContratosPdfApi.Controllers
                 return StatusCode(500, new { success = false, message = "Error interno del servidor" });
             }
         }
+
+        // AGREGAR este método al ContratosController.cs después de los métodos existentes:
+
+        /// <summary>
+        /// Subir PDF validado y crear contrato
+        /// </summary>
+        [HttpPost("SubirPdfValidado")]
+        public async Task<IActionResult> SubirPdfValidado([FromForm] IFormFile file, [FromForm] string datosContrato, [FromForm] string validacionIntegridad)
+        {
+            try
+            {
+                if (file == null || file.Length == 0)
+                {
+                    return BadRequest(new { success = false, message = "No se proporcionó archivo" });
+                }
+
+                _logger.LogInformation($"📋 JSON recibido: {datosContrato}");
+
+                // CONFIGURAR opciones de deserialización más permisivas
+                var options = new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true,  // ← CLAVE: Ignorar mayúsculas/minúsculas
+                    AllowTrailingCommas = true,
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase  // ← Convertir camelCase a PascalCase
+                };
+
+                // Deserializar datos del contrato
+                var datos = JsonSerializer.Deserialize<ContratoCreateDto>(datosContrato, options);
+                if (datos == null)
+                {
+                    return BadRequest(new { success = false, message = "Datos del contrato inválidos" });
+                }
+
+                // LOG para verificar datos deserializados ANTES de validaciones
+                _logger.LogInformation($"📋 Datos DESPUÉS de deserializar:");
+                _logger.LogInformation($"   - NombreContratista: '{datos.NombreContratista}'");
+                _logger.LogInformation($"   - RucContratista: '{datos.RucContratista}'");
+                _logger.LogInformation($"   - MontoContrato: {datos.MontoContrato}");
+                _logger.LogInformation($"   - FechaFirmaContrato: '{datos.FechaFirmaContrato}'");
+
+                // VALIDAR que los datos importantes no estén vacíos
+                if (string.IsNullOrWhiteSpace(datos.NombreContratista))
+                {
+                    return BadRequest(new { success = false, message = "El nombre del contratista es obligatorio" });
+                }
+
+                if (string.IsNullOrWhiteSpace(datos.RucContratista))
+                {
+                    return BadRequest(new { success = false, message = "El RUC del contratista es obligatorio" });
+                }
+
+                if (datos.MontoContrato <= 0)
+                {
+                    return BadRequest(new { success = false, message = "El monto debe ser mayor a 0" });
+                }
+
+                // Subir archivo
+                var archivoDto = new ArchivoUploadDto
+                {
+                    NombreOriginal = file.FileName,
+                    TipoArchivo = "PDF_FIRMADO",
+                    UsuarioId = datos.UsuarioCreadorId ?? 1
+                };
+
+                var archivo = await _archivoService.SubirArchivoAsync(file, archivoDto);
+
+                // Crear contrato con archivo asociado
+                datos.ArchivosAsociados = new List<int> { archivo.Id };
+                datos.UsuarioCreadorId = datos.UsuarioCreadorId ?? 1; // Asegurar que no sea null
+
+                var contrato = await _contratoService.CrearContratoAsync(datos);
+
+                _logger.LogInformation($"✅ PDF validado subido exitosamente: Contrato ID {contrato.Id}");
+
+                return Ok(new
+                {
+                    success = true,
+                    message = "PDF validado y contrato guardado exitosamente",
+                    data = new
+                    {
+                        contrato = contrato,
+                        archivo = archivo
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Error al subir PDF validado: {Error}", ex.Message);
+                return StatusCode(500, new
+                {
+                    success = false,
+                    message = "Error interno del servidor",
+                    details = ex.Message
+                });
+            }
+        }
+
     }
 }

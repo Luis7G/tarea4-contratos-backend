@@ -7,7 +7,7 @@ namespace ContratosPdfApi.Models.DTOs
         public string NombreContratista { get; set; } = string.Empty;
         public string RucContratista { get; set; } = string.Empty;
         public decimal MontoContrato { get; set; }
-        public DateTime FechaFirmaContrato { get; set; }
+        public string FechaFirmaContrato { get; set; } = string.Empty; // ← CAMBIAR A STRING
         public int? UsuarioCreadorId { get; set; }
 
         // Datos específicos del contrato de bienes (JSON)

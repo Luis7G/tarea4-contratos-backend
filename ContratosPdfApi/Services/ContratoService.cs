@@ -16,12 +16,16 @@ namespace ContratosPdfApi.Services
             _logger = logger;
         }
 
+        // MODIFICAR el método CrearContratoAsync en ContratoService.cs:
+
+        // REEMPLAZAR la validación de fecha en ContratoService.cs:
+
         public async Task<ContratoResponseDto> CrearContratoAsync(ContratoCreateDto contratoDto)
         {
             try
             {
                 using var connection = new SqlConnection(_connectionString);
-                
+
                 // Obtener ID del tipo de contrato
                 var tipoContrato = await connection.QuerySingleOrDefaultAsync<dynamic>(
                     "SELECT Id FROM TiposContrato WHERE Codigo = @Codigo AND Activo = 1",
@@ -31,12 +35,28 @@ namespace ContratosPdfApi.Services
                 if (tipoContrato == null)
                     throw new ArgumentException($"Tipo de contrato '{contratoDto.TipoContratoCodigo}' no encontrado");
 
+                // VALIDAR Y CONVERTIR LA FECHA DESDE STRING
+                DateTime fechaFirma;
+                if (string.IsNullOrWhiteSpace(contratoDto.FechaFirmaContrato) ||
+                    !DateTime.TryParse(contratoDto.FechaFirmaContrato, out fechaFirma) ||
+                    fechaFirma < new DateTime(1753, 1, 1) ||
+                    fechaFirma > new DateTime(9999, 12, 31))
+                {
+                    _logger.LogWarning($"Fecha inválida recibida: '{contratoDto.FechaFirmaContrato}', usando fecha actual");
+                    fechaFirma = DateTime.Today;
+                }
+
+                _logger.LogInformation($"📅 Fecha procesada para DB: {fechaFirma:yyyy-MM-dd}");
+
                 // Serializar datos específicos a JSON
                 string? datosEspecificosJson = null;
                 if (contratoDto.DatosEspecificos != null)
                 {
                     datosEspecificosJson = JsonSerializer.Serialize(contratoDto.DatosEspecificos);
                 }
+
+                // LOG para debugging - ver qué datos llegan
+                _logger.LogInformation($"📋 Datos del contrato: Nombre='{contratoDto.NombreContratista}', RUC='{contratoDto.RucContratista}', Monto={contratoDto.MontoContrato}");
 
                 // Insertar contrato
                 var contratoId = await connection.QuerySingleAsync<int>(
@@ -45,31 +65,33 @@ namespace ContratosPdfApi.Services
                     {
                         TipoContratoId = (int)tipoContrato.Id,
                         NumeroContrato = contratoDto.NumeroContrato,
-                        NombreContratista = contratoDto.NombreContratista,
-                        RucContratista = contratoDto.RucContratista,
+                        NombreContratista = contratoDto.NombreContratista?.Trim(),
+                        RucContratista = contratoDto.RucContratista?.Trim(),
                         MontoContrato = contratoDto.MontoContrato,
-                        FechaFirmaContrato = contratoDto.FechaFirmaContrato,
-                        UsuarioCreadorId = contratoDto.UsuarioCreadorId,
+                        FechaFirmaContrato = fechaFirma,
+                        UsuarioCreadorId = contratoDto.UsuarioCreadorId ?? 1, // Default a 1 si es null
                         DatosEspecificos = datosEspecificosJson
                     },
                     commandType: System.Data.CommandType.StoredProcedure
                 );
 
                 // Asociar archivos si se proporcionaron
-                foreach (var archivoId in contratoDto.ArchivosAsociados)
+                if (contratoDto.ArchivosAsociados?.Any() == true)
                 {
-                    await AsociarArchivoContratoAsync(contratoId, archivoId);
+                    foreach (var archivoId in contratoDto.ArchivosAsociados)
+                    {
+                        await AsociarArchivoContratoAsync(contratoId, archivoId);
+                    }
                 }
 
-                _logger.LogInformation($"Contrato creado exitosamente: ID {contratoId}");
+                _logger.LogInformation($"✅ Contrato creado exitosamente: ID {contratoId}");
 
-                // Retornar el contrato creado
-                return await ObtenerContratoPorIdAsync(contratoId) 
+                return await ObtenerContratoPorIdAsync(contratoId)
                     ?? throw new Exception("Error al recuperar el contrato creado");
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error al crear contrato");
+                _logger.LogError(ex, "❌ Error al crear contrato: {Error}", ex.Message);
                 throw;
             }
         }
