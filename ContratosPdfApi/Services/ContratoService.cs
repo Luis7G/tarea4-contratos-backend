@@ -26,16 +26,18 @@ namespace ContratosPdfApi.Services
         {
             try
             {
-                using var connection = _dbHelper.CreateConnection();  // ← NUEVO: usar DatabaseHelper
+                using var connection = _dbHelper.CreateConnection();
 
-                // Obtener ID del tipo de contrato (igual para ambas BD)
-                var tipoContrato = await connection.QuerySingleOrDefaultAsync<dynamic>(
-                    "SELECT Id FROM TiposContrato WHERE Codigo = @Codigo AND Activo = true",  // ← true para PostgreSQL, 1 para SQL Server funciona igual
+                // CORREGIDO: Obtener ID del tipo de contrato
+                var tipoContratoId = await connection.QuerySingleOrDefaultAsync<int?>(
+                    "SELECT Id FROM TiposContrato WHERE Codigo = @Codigo AND Activo = true",
                     new { Codigo = contratoDto.TipoContratoCodigo }
                 );
 
-                if (tipoContrato == null)
+                if (tipoContratoId == null)
                     throw new ArgumentException($"Tipo de contrato '{contratoDto.TipoContratoCodigo}' no encontrado");
+
+                _logger.LogInformation($"✅ Tipo de contrato encontrado: ID {tipoContratoId} para código '{contratoDto.TipoContratoCodigo}'");
 
                 // VALIDAR Y CONVERTIR LA FECHA DESDE STRING
                 DateTime fechaFirma;
@@ -59,16 +61,13 @@ namespace ContratosPdfApi.Services
 
                 _logger.LogInformation($"📋 Datos del contrato: Nombre='{contratoDto.NombreContratista}', RUC='{contratoDto.RucContratista}', Monto={contratoDto.MontoContrato}");
 
-                // ═══════════════════════════════════════════════════════════
                 // INSERTAR CONTRATO - COMPATIBLE CON AMBOS PROVEEDORES
-                // ═══════════════════════════════════════════════════════════
-
                 var insertSql = _dbHelper.GetInsertContratoSql();
                 int contratoId;
 
                 var parametros = new
                 {
-                    TipoContratoId = (int)tipoContrato.Id,
+                    TipoContratoId = tipoContratoId.Value,  // ← CORREGIDO: usar .Value
                     NumeroContrato = contratoDto.NumeroContrato,
                     NombreContratista = contratoDto.NombreContratista?.Trim(),
                     RucContratista = contratoDto.RucContratista?.Trim(),
@@ -77,6 +76,9 @@ namespace ContratosPdfApi.Services
                     UsuarioCreadorId = contratoDto.UsuarioCreadorId ?? 1,
                     DatosEspecificos = datosEspecificosJson
                 };
+
+                _logger.LogInformation($"🔄 Ejecutando SQL: {insertSql}");
+                _logger.LogInformation($"📊 Parámetros: TipoContratoId={parametros.TipoContratoId}, Nombre='{parametros.NombreContratista}', RUC='{parametros.RucContratista}', Monto={parametros.MontoContrato}");
 
                 if (_dbHelper.IsPostgreSQL)
                 {
@@ -89,7 +91,7 @@ namespace ContratosPdfApi.Services
                     contratoId = await connection.QuerySingleAsync<int>(insertSql, parametros, commandType: System.Data.CommandType.StoredProcedure);
                 }
 
-                // Asociar archivos si se proporcionaron (igual para ambas BD)
+                // Asociar archivos si se proporcionaron
                 if (contratoDto.ArchivosAsociados?.Any() == true)
                 {
                     foreach (var archivoId in contratoDto.ArchivosAsociados)
@@ -111,42 +113,62 @@ namespace ContratosPdfApi.Services
         }
 
         // Métodos privados (actualizados para usar _dbHelper)
-        public async Task AsociarArchivoContratoAsync(int contratoId, int archivoId)
+        private async Task AsociarArchivoContratoAsync(int contratoId, int archivoId)
         {
-            using var connection = _dbHelper.CreateConnection();
-            await connection.ExecuteAsync(
-                "INSERT INTO ContratoArchivos (ContratoId, ArchivoId) VALUES (@ContratoId, @ArchivoId)",
-                new { ContratoId = contratoId, ArchivoId = archivoId }
-            );
+            try
+            {
+                using var connection = _dbHelper.CreateConnection();
+                await connection.ExecuteAsync(
+                    "INSERT INTO ContratoArchivos (ContratoId, ArchivoId) VALUES (@ContratoId, @ArchivoId)",
+                    new { ContratoId = contratoId, ArchivoId = archivoId }
+                );
+
+                _logger.LogInformation($"📎 Archivo {archivoId} asociado al contrato {contratoId}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Error asociando archivo {ArchivoId} al contrato {ContratoId}: {Error}", archivoId, contratoId, ex.Message);
+                throw;
+            }
         }
 
         public async Task<ContratoResponseDto?> ObtenerContratoPorIdAsync(int id)
         {
-            using var connection = _dbHelper.CreateConnection();
-
-            var contrato = await connection.QuerySingleOrDefaultAsync<ContratoResponseDto>(
-                @"SELECT c.Id, c.NumeroContrato, c.NombreContratista, c.RucContratista,
-                 c.MontoContrato, c.FechaFirmaContrato, c.Estado, c.FechaCreacion,
-                 c.UsuarioCreadorId, tc.Codigo as TipoContratoCodigo, tc.Nombre as TipoContratoNombre
-          FROM Contratos c 
-          INNER JOIN TiposContrato tc ON c.TipoContratoId = tc.Id 
-          WHERE c.Id = @Id",
-                new { Id = id }
-            );
-
-            if (contrato != null)
+            try
             {
-                // Obtener archivos asociados
-                var archivos = await connection.QueryAsync<ArchivoResponseDto>(
-                    @"SELECT a.* FROM Archivos a 
-              INNER JOIN ContratoArchivos ca ON a.Id = ca.ArchivoId 
-              WHERE ca.ContratoId = @ContratoId",
-                    new { ContratoId = id }
-                );
-                contrato.Archivos = archivos.ToList();
-            }
+                using var connection = _dbHelper.CreateConnection();
 
-            return contrato;
+                var contrato = await connection.QuerySingleOrDefaultAsync<ContratoResponseDto>(
+                    @"SELECT c.Id, c.NumeroContrato, c.NombreContratista, c.RucContratista,
+                     c.MontoContrato, c.FechaFirmaContrato, c.Estado, c.FechaCreacion,
+                     c.UsuarioCreadorId, tc.Codigo as TipoContratoCodigo, tc.Nombre as TipoContratoNombre
+              FROM Contratos c 
+              INNER JOIN TiposContrato tc ON c.TipoContratoId = tc.Id 
+              WHERE c.Id = @Id",
+                    new { Id = id }
+                );
+
+                if (contrato != null)
+                {
+                    // Obtener archivos asociados
+                    var archivos = await connection.QueryAsync<ArchivoResponseDto>(
+                        @"SELECT a.Id, a.NombreOriginal, a.NombreArchivo, a.RutaArchivo, a.TipoMIME,
+                         a.Tamaño, a.TipoArchivo, a.FechaSubida, a.HashSHA256, a.UsuarioId
+                  FROM Archivos a 
+                  INNER JOIN ContratoArchivos ca ON a.Id = ca.ArchivoId 
+                  WHERE ca.ContratoId = @ContratoId",
+                        new { ContratoId = id }
+                    );
+                    contrato.Archivos = archivos.ToList();
+                }
+
+                return contrato;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Error obteniendo contrato por ID {Id}: {Error}", id, ex.Message);
+                return null;
+            }
         }
 
         public async Task<List<ContratoResponseDto>> ListarContratosAsync(string? tipoContrato = null, string? estado = null, int pageNumber = 1, int pageSize = 10)
@@ -212,6 +234,11 @@ namespace ContratosPdfApi.Services
                 commandType: System.Data.CommandType.StoredProcedure
             );
             return tipos.ToList();
+        }
+
+        Task IContratoService.AsociarArchivoContratoAsync(int contratoId, int archivoId)
+        {
+            return AsociarArchivoContratoAsync(contratoId, archivoId);
         }
     }
 }
