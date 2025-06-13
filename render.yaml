@@ -11,4 +11,14 @@ services:
         value: http://0.0.0.0:8080
       - key: ASPNETCORE_HTTP_PORT
         value: 8080
-    healthCheckPath: /api/pdf/generate
+      - key: DATABASE_URL
+        fromDatabase:
+          name: contratos-db
+          property: connectionString
+    healthCheckPath: /health
+    
+  - type: pgsql
+    name: contratos-db
+    plan: free
+    databaseName: contratos_db
+    user: contratos_user

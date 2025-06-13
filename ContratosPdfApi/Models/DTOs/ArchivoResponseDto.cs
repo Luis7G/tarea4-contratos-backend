@@ -11,6 +11,7 @@ namespace ContratosPdfApi.Models.DTOs
         public long Tamaño { get; set; }
         public string TipoArchivo { get; set; }
         public DateTime FechaSubida { get; set; }
-        public string HashSHA256 { get; set; } 
+        public string HashSHA256 { get; set; }
+        public int? UsuarioId { get; internal set; }
     }
 }
