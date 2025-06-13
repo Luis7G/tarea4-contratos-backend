@@ -10,5 +10,7 @@ namespace ContratosPdfApi.Services
         Task ActualizarPdfContratoAsync(int contratoId, int archivoPdfId);
         Task AsociarArchivoContratoAsync(int contratoId, int archivoId);
         Task<List<dynamic>> ObtenerTiposContratoAsync();
+
+
     }
 }

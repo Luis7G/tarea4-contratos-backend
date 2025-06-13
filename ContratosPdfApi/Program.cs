@@ -5,6 +5,30 @@ using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// ═══════════════════════════════════════════════════════════
+// CONFIGURACIÓN DE BASE DE DATOS - AUTOMÁTICA SEGÚN ENTORNO
+// ═══════════════════════════════════════════════════════════
+
+// Detectar si estamos en Render (tiene DATABASE_URL)
+var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
+if (!string.IsNullOrEmpty(databaseUrl))
+{
+    Console.WriteLine("🐘 Detectado entorno Render - usando PostgreSQL");
+    builder.Configuration["DatabaseProvider"] = "PostgreSQL";
+    
+    // Parsear DATABASE_URL de Render
+    var uri = new Uri(databaseUrl);
+    var connectionString = $"Host={uri.Host};Port={uri.Port};Database={uri.AbsolutePath.Trim('/')};Username={uri.UserInfo.Split(':')[0]};Password={uri.UserInfo.Split(':')[1]};SSL Mode=Require;Trust Server Certificate=true;";
+    builder.Configuration["ConnectionStrings:PostgreSQLConnection"] = connectionString;
+    
+    Console.WriteLine($"✅ Conexión PostgreSQL configurada");
+}
+else
+{
+    Console.WriteLine("🏠 Entorno local - usando SQL Server");
+    builder.Configuration["DatabaseProvider"] = "SqlServer";
+}
+
 // Add services to the container.
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -118,6 +142,8 @@ catch (Exception ex)
 }
 
 // Registrar servicios de Dapper/SQL
+
+builder.Services.AddScoped<IDatabaseHelper, DatabaseHelper>(); 
 builder.Services.AddScoped<IArchivoService, ArchivoService>();
 builder.Services.AddScoped<IContratoService, ContratoService>();
 builder.Services.AddScoped<IPdfValidationService, PdfValidationService>();
@@ -130,7 +156,9 @@ builder.Services.AddHostedService<TempFileCleanupService>();
 // Configurar wwwroot para archivos estáticos
 builder.Services.Configure<StaticFileOptions>(options =>
 {
-    options.ServeUnknownFileTypes = true;
+    options.FileProvider = new PhysicalFileProvider(
+        Path.Combine(builder.Environment.WebRootPath, "Uploads"));
+    options.RequestPath = "/uploads";
 });
 
 var app = builder.Build();
@@ -154,8 +182,9 @@ else
 // Configurar archivos estáticos ANTES de UseCors
 app.UseStaticFiles(new StaticFileOptions
 {
-    ServeUnknownFileTypes = true,
-    DefaultContentType = "application/octet-stream"
+    FileProvider = new PhysicalFileProvider(
+        Path.Combine(app.Environment.WebRootPath, "Uploads")),
+    RequestPath = "/uploads"
 });
 
 // También puedes agregar configuración específica para assets
@@ -164,7 +193,15 @@ app.UseStaticFiles(new StaticFileOptions
     FileProvider = new PhysicalFileProvider(
         Path.Combine(builder.Environment.ContentRootPath, "wwwroot", "assets")),
     RequestPath = "/assets"
-}); 
+});
+
+// AGREGAR: Configurar archivos estáticos para archivos temporales
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(
+        Path.Combine(app.Environment.WebRootPath, "temp")),
+    RequestPath = "/temp"
+});
 
 app.UseCors("AllowFrontend");
 app.UseAuthorization();

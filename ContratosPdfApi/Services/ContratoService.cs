@@ -1,6 +1,7 @@
 using ContratosPdfApi.Models.DTOs;
 using Dapper;
 using Microsoft.Data.SqlClient;
+using Npgsql;
 using System.Text.Json;
 
 namespace ContratosPdfApi.Services
@@ -9,6 +10,7 @@ namespace ContratosPdfApi.Services
     {
         private readonly string _connectionString;
         private readonly ITempFileService _tempFileService;
+
         private readonly ILogger<ContratoService> _logger;
         private readonly IServiceProvider _serviceProvider;
 
@@ -16,11 +18,13 @@ namespace ContratosPdfApi.Services
         {
             _tempFileService = tempFileService;
             _connectionString = configuration.GetConnectionString("DefaultConnection")!;
+
             _logger = logger;
             _serviceProvider = serviceProvider;
         }
 
         public async Task<ContratoResponseDto> CrearContratoAsync(ContratoCreateDto contratoDto, string? sessionId = null)
+
         {
             using var connection = new SqlConnection(_connectionString);
             await connection.OpenAsync();
@@ -28,7 +32,6 @@ namespace ContratosPdfApi.Services
 
             try
             {
-                // ✅ OBTENER TIPO DE CONTRATO CORRECTO
                 var tipoContrato = await connection.QuerySingleOrDefaultAsync<dynamic>(
                     "SELECT Id, Codigo FROM TiposContrato WHERE Codigo = @Codigo AND Activo = 1",
                     new { Codigo = contratoDto.TipoContrato },
@@ -36,6 +39,7 @@ namespace ContratosPdfApi.Services
                 );
 
                 if (tipoContrato == null)
+
                 {
                     throw new ArgumentException($"Tipo de contrato no válido: {contratoDto.TipoContrato}");
                 }
@@ -120,6 +124,7 @@ namespace ContratosPdfApi.Services
             {
                 transaction.Rollback();
                 _logger.LogError(ex, "Error al crear contrato");
+
                 throw;
             }
         }
@@ -254,6 +259,7 @@ namespace ContratosPdfApi.Services
             {
                 _logger.LogError(ex, $"Error al obtener contrato por ID: {id}");
                 throw;
+
             }
         }
 
@@ -354,9 +360,11 @@ namespace ContratosPdfApi.Services
             );
 
             _logger.LogInformation($"PDF actualizado para contrato {contratoId}: archivo {archivoPdfId}");
-        }
 
-        public async Task AsociarArchivoContratoAsync(int contratoId, int archivoId)
+        }
+        // BUSCAR el método ActualizarPdfContratoAsync y REEMPLAZARLO:
+
+        private async Task ActualizarPdfContratoAsync(int contratoId, int archivoPdfId)
         {
             using var connection = new SqlConnection(_connectionString);
 
@@ -373,11 +381,16 @@ namespace ContratosPdfApi.Services
                     FechaAsociacion = DateTime.UtcNow
                 }
             );
+
         }
+
+
 
         public async Task<List<dynamic>> ObtenerTiposContratoAsync()
         {
-            using var connection = new SqlConnection(_connectionString);
+            //using var connection = new SqlConnection(_connectionString);
+            using var connection = _dbHelper.CreateConnection();
+
             var tipos = await connection.QueryAsync<dynamic>(
                 "SELECT * FROM TiposContrato WHERE Activo = 1 ORDER BY Nombre"
             );
@@ -410,6 +423,7 @@ namespace ContratosPdfApi.Services
                 _logger.LogWarning(ex, "Error obteniendo datos de firmas, usando valores por defecto");
                 return ("Diego Fernando Zárate Valdivieso", "Gerente General", "[NOMBRE_CONTRATISTA]", "[CARGO_REPRESENTANTE]");
             }
+
         }
     }
 }

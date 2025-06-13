@@ -1,6 +1,8 @@
+using System.Text.Json;
 using ContratosPdfApi.Models;
 using ContratosPdfApi.Models.DTOs;
 using ContratosPdfApi.Services;
+using Dapper;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ContratosPdfApi.Controllers
@@ -13,17 +15,22 @@ namespace ContratosPdfApi.Controllers
         private readonly IArchivoService _archivoService;
         private readonly IPdfService _pdfService;
         private readonly ILogger<ContratosController> _logger;
+        private readonly IDatabaseHelper _dbHelper;
+
 
         public ContratosController(
             IContratoService contratoService,
             IArchivoService archivoService,
             IPdfService pdfService,
-            ILogger<ContratosController> logger)
+            ILogger<ContratosController> logger
+            ,
+            IDatabaseHelper dbHelper)
         {
             _contratoService = contratoService;
             _archivoService = archivoService;
             _pdfService = pdfService;
             _logger = logger;
+            _dbHelper = dbHelper;
         }
 
         /// <summary>
@@ -261,5 +268,251 @@ public async Task<IActionResult> CrearContrato([FromBody] ContratoCreateDto cont
                 return StatusCode(500, new { success = false, message = "Error interno del servidor" });
             }
         }
+
+        // AGREGAR este método al ContratosController.cs después de los métodos existentes:
+
+        /// <summary>
+        /// Subir PDF validado y crear contrato
+        /// </summary>
+        [HttpPost("SubirPdfValidado")]
+        public async Task<IActionResult> SubirPdfValidado([FromForm] IFormFile file, [FromForm] string datosContrato, [FromForm] string validacionIntegridad)
+        {
+            try
+            {
+                if (file == null || file.Length == 0)
+                {
+                    return BadRequest(new { success = false, message = "No se proporcionó archivo" });
+                }
+
+                _logger.LogInformation($"📋 JSON recibido: {datosContrato}");
+
+                // CONFIGURAR opciones de deserialización más permisivas
+                var options = new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true,  // ← CLAVE: Ignorar mayúsculas/minúsculas
+                    AllowTrailingCommas = true,
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase  // ← Convertir camelCase a PascalCase
+                };
+
+                // Deserializar datos del contrato
+                var datos = JsonSerializer.Deserialize<ContratoCreateDto>(datosContrato, options);
+                if (datos == null)
+                {
+                    return BadRequest(new { success = false, message = "Datos del contrato inválidos" });
+                }
+
+                // LOG para verificar datos deserializados ANTES de validaciones
+                _logger.LogInformation($"📋 Datos DESPUÉS de deserializar:");
+                _logger.LogInformation($"   - NombreContratista: '{datos.NombreContratista}'");
+                _logger.LogInformation($"   - RucContratista: '{datos.RucContratista}'");
+                _logger.LogInformation($"   - MontoContrato: {datos.MontoContrato}");
+                _logger.LogInformation($"   - FechaFirmaContrato: '{datos.FechaFirmaContrato}'");
+
+                // VALIDAR que los datos importantes no estén vacíos
+                if (string.IsNullOrWhiteSpace(datos.NombreContratista))
+                {
+                    return BadRequest(new { success = false, message = "El nombre del contratista es obligatorio" });
+                }
+
+                if (string.IsNullOrWhiteSpace(datos.RucContratista))
+                {
+                    return BadRequest(new { success = false, message = "El RUC del contratista es obligatorio" });
+                }
+
+                if (datos.MontoContrato <= 0)
+                {
+                    return BadRequest(new { success = false, message = "El monto debe ser mayor a 0" });
+                }
+
+                // Subir archivo
+                var archivoDto = new ArchivoUploadDto
+                {
+                    NombreOriginal = file.FileName,
+                    TipoArchivo = "PDF_FIRMADO",
+                    UsuarioId = datos.UsuarioCreadorId ?? 1
+                };
+
+                var archivo = await _archivoService.SubirArchivoAsync(file, archivoDto);
+
+                // Crear contrato con archivo asociado
+                datos.ArchivosAsociados = new List<int> { archivo.Id };
+                datos.UsuarioCreadorId = datos.UsuarioCreadorId ?? 1; // Asegurar que no sea null
+
+                var contrato = await _contratoService.CrearContratoAsync(datos);
+
+                _logger.LogInformation($"✅ PDF validado subido exitosamente: Contrato ID {contrato.Id}");
+
+                return Ok(new
+                {
+                    success = true,
+                    message = "PDF validado y contrato guardado exitosamente",
+                    data = new
+                    {
+                        contrato = contrato,
+                        archivo = archivo
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Error al subir PDF validado: {Error}", ex.Message);
+                return StatusCode(500, new
+                {
+                    success = false,
+                    message = "Error interno del servidor",
+                    details = ex.Message
+                });
+            }
+        }
+
+        [HttpGet("database-status")]
+        public async Task<IActionResult> DatabaseStatus()
+        {
+            try
+            {
+                using var connection = _dbHelper.CreateConnection();
+
+                // Verificar tablas existentes
+                var tablas = await connection.QueryAsync<string>(
+                    _dbHelper.IsPostgreSQL
+                        ? "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
+                        : "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'"
+                );
+
+                // Verificar tipos de contrato si la tabla existe
+                List<dynamic>? tiposContrato = null;
+                if (tablas.Contains("tiposcontrato") || tablas.Contains("TiposContrato"))
+                {
+                    tiposContrato = (await connection.QueryAsync<dynamic>("SELECT * FROM TiposContrato")).ToList();
+                }
+
+                // Verificar usuarios
+                List<dynamic>? usuarios = null;
+                if (tablas.Contains("usuarios") || tablas.Contains("Usuarios"))
+                {
+                    usuarios = (await connection.QueryAsync<dynamic>("SELECT * FROM Usuarios")).ToList();
+                }
+
+                return Ok(new
+                {
+                    DatabaseProvider = _dbHelper.IsPostgreSQL ? "PostgreSQL" : "SQL Server",
+                    TablasExistentes = tablas.ToList(),
+                    TiposContrato = tiposContrato,
+                    Usuarios = usuarios,
+                    DatabaseConnected = true
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    error = ex.Message,
+                    DatabaseConnected = false
+                });
+            }
+        }
+
+        // AGREGAR este endpoint temporal:
+
+        [HttpPost("create-functions")]
+        public async Task<IActionResult> CreateFunctions()
+        {
+            try
+            {
+                using var connection = _dbHelper.CreateConnection();
+
+                var funcionScripts = new[]
+                {
+            // Función insertar_archivo
+            @"CREATE OR REPLACE FUNCTION insertar_archivo(
+                p_nombre_original VARCHAR,
+                p_nombre_archivo VARCHAR,
+                p_ruta_archivo VARCHAR,
+                p_tipo_mime VARCHAR,
+                p_tamaño BIGINT,
+                p_tipo_archivo VARCHAR,
+                p_hash_sha256 VARCHAR,
+                p_usuario_id INTEGER
+            ) RETURNS INTEGER AS $$
+            DECLARE
+                nuevo_id INTEGER;
+            BEGIN
+                INSERT INTO Archivos (
+                    NombreOriginal, NombreArchivo, RutaArchivo, TipoMIME, 
+                    Tamaño, TipoArchivo, HashSHA256, UsuarioId
+                ) VALUES (
+                    p_nombre_original, p_nombre_archivo, p_ruta_archivo, p_tipo_mime,
+                    p_tamaño, p_tipo_archivo, p_hash_sha256, p_usuario_id
+                ) RETURNING Id INTO nuevo_id;
+                
+                RETURN nuevo_id;
+            END;
+            $$ LANGUAGE plpgsql;",
+            
+            // Función insertar_contrato
+            @"CREATE OR REPLACE FUNCTION insertar_contrato(
+                p_tipo_contrato_id INTEGER,
+                p_numero_contrato VARCHAR,
+                p_nombre_contratista VARCHAR,
+                p_ruc_contratista VARCHAR,
+                p_monto_contrato DECIMAL,
+                p_fecha_firma_contrato DATE,
+                p_usuario_creador_id INTEGER,
+                p_datos_especificos JSONB DEFAULT NULL
+            ) RETURNS INTEGER AS $$
+            DECLARE
+                nuevo_contrato_id INTEGER;
+            BEGIN
+                INSERT INTO Contratos (
+                    TipoContratoId, NumeroContrato, NombreContratista, RucContratista,
+                    MontoContrato, FechaFirmaContrato, UsuarioCreadorId, Estado
+                ) VALUES (
+                    p_tipo_contrato_id, p_numero_contrato, p_nombre_contratista, p_ruc_contratista,
+                    p_monto_contrato, p_fecha_firma_contrato, p_usuario_creador_id, 'Activo'
+                ) RETURNING Id INTO nuevo_contrato_id;
+                
+                IF p_datos_especificos IS NOT NULL THEN
+                    INSERT INTO ContratoDetalles (ContratoId, DatosEspecificos)
+                    VALUES (nuevo_contrato_id, p_datos_especificos);
+                END IF;
+                
+                RETURN nuevo_contrato_id;
+            END;
+            $$ LANGUAGE plpgsql;"
+        };
+
+                var results = new List<string>();
+
+                foreach (var script in funcionScripts)
+                {
+                    try
+                    {
+                        await connection.ExecuteAsync(script);
+                        results.Add($"✅ Función creada correctamente");
+                    }
+                    catch (Exception ex)
+                    {
+                        results.Add($"❌ Error creando función: {ex.Message}");
+                    }
+                }
+
+                // Verificar que las funciones se crearon
+                var funciones = await connection.QueryAsync<string>(
+                    "SELECT routine_name FROM information_schema.routines WHERE routine_type = 'FUNCTION' AND routine_schema = 'public'"
+                );
+
+                return Ok(new
+                {
+                    message = "Funciones creadas",
+                    results = results,
+                    funcionesExistentes = funciones.ToList()
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+        }
+
     }
 }
