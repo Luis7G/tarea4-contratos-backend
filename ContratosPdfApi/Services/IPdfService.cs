@@ -2,9 +2,9 @@ using ContratosPdfApi.Models;
 
 namespace ContratosPdfApi.Services
 {
-    public interface IPdfService
-    {
-         byte[] GeneratePdfFromHtml(string htmlContent);
+  public interface IPdfService
+  {
+    byte[] GeneratePdfFromHtml(string htmlContent);
 
-    }
+  }
 }
