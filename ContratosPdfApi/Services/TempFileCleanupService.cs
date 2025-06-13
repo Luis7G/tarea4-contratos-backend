@@ -6,11 +6,13 @@ namespace ContratosPdfApi.Services
     {
         private readonly IWebHostEnvironment _environment;
         private readonly ILogger<TempFileCleanupService> _logger;
+                private readonly IServiceProvider _serviceProvider;
 
-        public TempFileCleanupService(IWebHostEnvironment environment, ILogger<TempFileCleanupService> logger)
+        public TempFileCleanupService(IWebHostEnvironment environment, ILogger<TempFileCleanupService> logger, IServiceProvider serviceProvider)
         {
             _environment = environment;
             _logger = logger;
+            _serviceProvider = serviceProvider;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -21,8 +23,17 @@ namespace ContratosPdfApi.Services
             {
                 try
                 {
+                    using (var scope = _serviceProvider.CreateScope())
+                    {
+                        var tempFileService = scope.ServiceProvider.GetRequiredService<ITempFileService>();
+                        tempFileService.LimpiarArchivosExpirados();
+                    }
+
+                    _logger.LogDebug("Limpieza de archivos temporales ejecutada");
+
                     CleanupOldTempFiles();
-                    await Task.Delay(TimeSpan.FromMinutes(30), stoppingToken); // Limpiar cada 30 min
+
+
                 }
                 catch (OperationCanceledException)
                 {
@@ -32,6 +43,8 @@ namespace ContratosPdfApi.Services
                 {
                     _logger.LogError(ex, "Error en servicio de limpieza");
                 }
+                                    await Task.Delay(TimeSpan.FromMinutes(30), stoppingToken); // Limpiar cada 30 min
+
             }
         }
 

@@ -128,9 +128,9 @@ namespace ContratosPdfApi.Controllers
                     return BadRequest(new { error = "Tipo de archivo no válido. Solo se permiten: JPG, PNG, GIF, BMP" });
                 }
 
-                // Crear directorio temp en wwwroot
+                // ✅ USAR CARPETA UNIFICADA
                 var wwwrootPath = _environment.WebRootPath ?? Path.Combine(_environment.ContentRootPath, "wwwroot");
-                var tempFolder = Path.Combine(wwwrootPath, "temp");
+                var tempFolder = Path.Combine(wwwrootPath, "storage", "temp", "images");
 
                 if (!Directory.Exists(tempFolder))
                 {
@@ -156,7 +156,7 @@ namespace ContratosPdfApi.Controllers
                     ? $"{Request.Scheme}://{Request.Host}"
                     : Environment.GetEnvironmentVariable("RENDER_EXTERNAL_URL") ?? "https://contratos-pdf-api.onrender.com";
 
-                var imageUrl = $"{baseUrl}/temp/{fileName}";
+                var imageUrl = $"{baseUrl}/storage/temp/images/{fileName}";
 
                 _logger.LogInformation($"Imagen temporal guardada: {fileName} ({image.Length / 1024}KB)");
                 _logger.LogInformation($"URL de imagen: {imageUrl}");
@@ -210,8 +210,9 @@ namespace ContratosPdfApi.Controllers
                     return BadRequest(new { error = "Nombre de archivo no válido" });
                 }
 
+                // ✅ USAR CARPETA UNIFICADA
                 var wwwrootPath = _environment.WebRootPath ?? Path.Combine(_environment.ContentRootPath, "wwwroot");
-                var tempFolder = Path.Combine(wwwrootPath, "temp");
+                var tempFolder = Path.Combine(wwwrootPath, "storage", "temp", "images");
                 var filePath = Path.Combine(tempFolder, fileName);
 
                 if (System.IO.File.Exists(filePath))
@@ -231,7 +232,7 @@ namespace ContratosPdfApi.Controllers
             }
         }
 
-        
+
 
         [HttpGet("health")]
         public IActionResult Health()

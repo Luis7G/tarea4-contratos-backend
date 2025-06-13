@@ -15,7 +15,6 @@ namespace ContratosPdfApi.Services
         private readonly ILogger<ArchivoService> _logger;
 
         public ArchivoService(
-             IDatabaseHelper dbHelper,
             IConfiguration configuration,
             IWebHostEnvironment environment,
             ILogger<ArchivoService> logger)
@@ -53,17 +52,22 @@ namespace ContratosPdfApi.Services
                 var extension_limpia = Path.GetExtension(archivo.FileName);
                 var nombreArchivo = $"{timestamp}_{hashCorto}{extension_limpia}";
 
+
+                // Generar nombre único y ruta
+                var timeStamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                var uniqueId = Guid.NewGuid().ToString("N")[..8];
+                var nombreArchivo = $"{timeStamp}_{uniqueId}{extension}";
+
                 // Determinar carpeta según tipo de archivo
-                var carpetaDestino = DeterminarCarpetaPorTipoArchivo(archivoDto.TipoArchivo);
-                var rutaCompleta = Path.Combine(_environment.WebRootPath, carpetaDestino, nombreArchivo);
+                var carpeta = DeterminarCarpetaPorTipoArchivo(archivoDto.TipoArchivo);
+                var rutaCompleta = Path.Combine(_environment.WebRootPath, carpeta);
 
                 // Crear directorio si no existe
-                var directorio = Path.GetDirectoryName(rutaCompleta);
-                if (!Directory.Exists(directorio))
-                    Directory.CreateDirectory(directorio!);
+                Directory.CreateDirectory(rutaCompleta);
 
-                // Calcular hash SHA256 del archivo
-                var hashCalculado = await CalcularHashSHA256Async(archivo);
+                var rutaArchivo = Path.Combine(rutaCompleta, nombreArchivo);
+                var rutaRelativa = Path.Combine(carpeta, nombreArchivo).Replace("\\", "/");
+
 
                 // Guardar archivo físico
                 using (var stream = new FileStream(rutaCompleta, FileMode.Create))
@@ -149,22 +153,29 @@ namespace ContratosPdfApi.Services
 
         private string GenerarHashCorto(string input)
         {
-            using var sha256 = SHA256.Create();
-            var hashBytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(input));
-            return Convert.ToHexString(hashBytes)[..8].ToLowerInvariant();
+
+            var carpetas = _configuration.GetSection("FileStorage:ContratosFolders").Get<Dictionary<string, string>>()
+                ?? new Dictionary<string, string>();
+
+            return carpetas.ContainsKey(tipoContrato.ToUpper())
+                ? carpetas[tipoContrato.ToUpper()]
+                : "Contratos/General";
+
         }
 
         private string DeterminarCarpetaPorTipoArchivo(string tipoArchivo)
         {
-            var baseDirectory = "Uploads";
+
+            var baseDirectory = "storage";
 
             return tipoArchivo.ToUpper() switch
             {
-                "PDF_GENERADO" => Path.Combine(baseDirectory, "Contratos/Bienes/PDFs"),
-                "PDF_FIRMADO" => Path.Combine(baseDirectory, "Contratos/Bienes/PDFs"),
-                "TABLA_CANTIDADES" => Path.Combine(baseDirectory, "Contratos/Bienes/TablaCantidades"),
-                "RESPALDO_CONTRATANTE" => Path.Combine(baseDirectory, "Contratos/Bienes/Respaldos"),
-                _ => Path.Combine(baseDirectory, "Contratos/Bienes/Otros")
+                "PDF_GENERADO" => Path.Combine(baseDirectory, "contratos", "bienes", "pdfs"),
+                "TABLA_CANTIDADES" => Path.Combine(baseDirectory, "contratos", "bienes", "respaldos"),
+                "RESPALDO_CONTRATANTE" => Path.Combine(baseDirectory, "contratos", "bienes", "respaldos"),
+                "ADJUNTO_CONTRATO" => Path.Combine(baseDirectory, "contratos", "bienes", "adjuntos"),
+                _ => Path.Combine(baseDirectory, "contratos", "bienes", "adjuntos")
+
             };
         }
 

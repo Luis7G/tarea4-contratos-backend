@@ -148,6 +148,9 @@ builder.Services.AddScoped<IArchivoService, ArchivoService>();
 builder.Services.AddScoped<IContratoService, ContratoService>();
 builder.Services.AddScoped<IPdfValidationService, PdfValidationService>();
 builder.Services.AddScoped<IPdfService, PdfService>();
+builder.Services.AddScoped<IArchivoAdjuntoService, ArchivoAdjuntoService>(); 
+builder.Services.AddScoped<ITempFileService, TempFileService>(); // NUEVO
+
 builder.Services.AddHostedService<TempFileCleanupService>();
 
 // Configurar wwwroot para archivos estáticos
@@ -208,13 +211,15 @@ app.MapControllers();
 var webRootPath = app.Environment.WebRootPath;
 var directoriosNecesarios = new[]
 {
-    "Uploads/Contratos/Bienes/PDFs",
-    "Uploads/Contratos/Bienes/TablaCantidades",
-    "Uploads/Contratos/Bienes/Respaldos",
-    "Uploads/Contratos/Servicios",
-    "Uploads/Contratos/Obras",
-    "Uploads/Contratos/Consultoria",
-    "Uploads/Temp"
+    "storage/contratos/bienes/pdfs",
+    "storage/contratos/bienes/adjuntos", 
+    "storage/contratos/bienes/respaldos",
+    "storage/contratos/servicios",
+    "storage/contratos/obras",
+    "storage/contratos/consultoria",
+    "storage/temp/sessions",
+    "storage/temp/images",
+    "storage/temp/uploads"
 };
 
 foreach (var directorio in directoriosNecesarios)
