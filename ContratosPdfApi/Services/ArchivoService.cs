@@ -13,7 +13,7 @@ namespace ContratosPdfApi.Services
         private readonly ILogger<ArchivoService> _logger;
 
         public ArchivoService(
-            IConfiguration configuration, 
+            IConfiguration configuration,
             IWebHostEnvironment environment,
             ILogger<ArchivoService> logger)
         {
@@ -33,7 +33,7 @@ namespace ContratosPdfApi.Services
 
                 var extensionesPermitidas = _configuration.GetSection("FileStorage:AllowedExtensions").Get<string[]>() ?? new[] { ".pdf" };
                 var extension = Path.GetExtension(archivo.FileName).ToLowerInvariant();
-                
+
                 if (!extensionesPermitidas.Contains(extension))
                     throw new ArgumentException($"Extensión no permitida. Permitidas: {string.Join(", ", extensionesPermitidas)}");
 
@@ -45,14 +45,14 @@ namespace ContratosPdfApi.Services
                 var timeStamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
                 var uniqueId = Guid.NewGuid().ToString("N")[..8];
                 var nombreArchivo = $"{timeStamp}_{uniqueId}{extension}";
-                
+
                 // Determinar carpeta según tipo de archivo
                 var carpeta = DeterminarCarpetaPorTipoArchivo(archivoDto.TipoArchivo);
                 var rutaCompleta = Path.Combine(_environment.WebRootPath, carpeta);
-                
+
                 // Crear directorio si no existe
                 Directory.CreateDirectory(rutaCompleta);
-                
+
                 var rutaArchivo = Path.Combine(rutaCompleta, nombreArchivo);
                 var rutaRelativa = Path.Combine(carpeta, nombreArchivo).Replace("\\", "/");
 
@@ -126,27 +126,26 @@ namespace ContratosPdfApi.Services
 
         public string ObtenerRutaCarpetaPorTipo(string tipoContrato)
         {
-            var carpetas = _configuration.GetSection("FileStorage:ContratosFolders").Get<Dictionary<string, string>>() 
+            var carpetas = _configuration.GetSection("FileStorage:ContratosFolders").Get<Dictionary<string, string>>()
                 ?? new Dictionary<string, string>();
-            
-            return carpetas.ContainsKey(tipoContrato.ToUpper()) 
-                ? carpetas[tipoContrato.ToUpper()] 
+
+            return carpetas.ContainsKey(tipoContrato.ToUpper())
+                ? carpetas[tipoContrato.ToUpper()]
                 : "Contratos/General";
         }
 
         private string DeterminarCarpetaPorTipoArchivo(string tipoArchivo)
         {
-            // Si estamos en contenedor, usar /app/uploads como base
-            var baseDirectory = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Production"
-                ? "/app/uploads"
-                : "Uploads";
+            // ✅ USAR ESTRUCTURA UNIFICADA
+            var baseDirectory = "storage";
 
             return tipoArchivo.ToUpper() switch
             {
-                "PDF_GENERADO" => Path.Combine(baseDirectory, "Contratos/Bienes/PDFs"),
-                "TABLA_CANTIDADES" => Path.Combine(baseDirectory, "Contratos/Bienes/TablaCantidades"),
-                "RESPALDO_CONTRATANTE" => Path.Combine(baseDirectory, "Contratos/Bienes/Respaldos"),
-                _ => Path.Combine(baseDirectory, "Contratos/Bienes/Otros")
+                "PDF_GENERADO" => Path.Combine(baseDirectory, "contratos", "bienes", "pdfs"),
+                "TABLA_CANTIDADES" => Path.Combine(baseDirectory, "contratos", "bienes", "respaldos"),
+                "RESPALDO_CONTRATANTE" => Path.Combine(baseDirectory, "contratos", "bienes", "respaldos"),
+                "ADJUNTO_CONTRATO" => Path.Combine(baseDirectory, "contratos", "bienes", "adjuntos"),
+                _ => Path.Combine(baseDirectory, "contratos", "bienes", "adjuntos")
             };
         }
     }

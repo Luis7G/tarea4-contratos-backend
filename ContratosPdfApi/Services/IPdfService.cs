@@ -4,6 +4,6 @@ namespace ContratosPdfApi.Services
 {
     public interface IPdfService
     {
-        byte[] GeneratePdfFromHtml(string htmlContent);
+        byte[] GeneratePdfFromHtml(string htmlContent, dynamic? contratoData = null);
     }
 }

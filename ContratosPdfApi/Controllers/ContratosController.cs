@@ -30,34 +30,71 @@ namespace ContratosPdfApi.Controllers
         /// Crear nuevo contrato
         /// </summary>
         [HttpPost]
-        public async Task<IActionResult> CrearContrato([FromBody] ContratoCreateDto contratoDto)
+public async Task<IActionResult> CrearContrato([FromBody] ContratoCreateDto contratoDto, [FromQuery] string? sessionId = null)
+{
+    try
+    {
+        // ✅ AGREGAR LOGGING DETALLADO PARA DEBUGGING
+        _logger.LogInformation($"=== CREAR CONTRATO ===");
+        _logger.LogInformation($"SessionId: {sessionId}");
+        _logger.LogInformation($"ContratoDto recibido:");
+        _logger.LogInformation($"  - TipoContrato: '{contratoDto.TipoContrato}'");
+        _logger.LogInformation($"  - RazonSocialContratista: '{contratoDto.RazonSocialContratista}'");
+        _logger.LogInformation($"  - RucContratista: '{contratoDto.RucContratista}'");
+        _logger.LogInformation($"  - MontoTotal: {contratoDto.MontoTotal}");
+        _logger.LogInformation($"  - FechaInicio: {contratoDto.FechaInicio}");
+        _logger.LogInformation($"  - FechaFin: {contratoDto.FechaFin}");
+        _logger.LogInformation($"  - UsuarioId: {contratoDto.UsuarioId}");
+        _logger.LogInformation($"  - ArchivosAsociados: {contratoDto.ArchivosAsociados?.Count ?? 0}");
+
+        // ✅ VALIDAR ModelState Y MOSTRAR ERRORES ESPECÍFICOS
+        if (!ModelState.IsValid)
         {
-            try
-            {
-                if (!ModelState.IsValid)
-                {
-                    return BadRequest(ModelState);
-                }
+            var errores = ModelState
+                .Where(x => x.Value.Errors.Count > 0)
+                .Select(x => new { 
+                    Campo = x.Key, 
+                    Errores = x.Value.Errors.Select(e => e.ErrorMessage) 
+                })
+                .ToList();
 
-                var contrato = await _contratoService.CrearContratoAsync(contratoDto);
+            _logger.LogWarning($"ModelState inválido:");
+            foreach (var error in errores)
+            {
+                _logger.LogWarning($"  - {error.Campo}: {string.Join(", ", error.Errores)}");
+            }
 
-                return CreatedAtAction(
-                    nameof(ObtenerContrato),
-                    new { id = contrato.Id },
-                    new { success = true, message = "Contrato creado exitosamente", data = contrato }
-                );
-            }
-            catch (ArgumentException ex)
-            {
-                _logger.LogWarning($"Error de validación al crear contrato: {ex.Message}");
-                return BadRequest(new { success = false, message = ex.Message });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error interno al crear contrato");
-                return StatusCode(500, new { success = false, message = "Error interno del servidor" });
-            }
+            return BadRequest(new { 
+                message = "Datos de entrada inválidos", 
+                errors = errores 
+            });
         }
+
+        var resultado = await _contratoService.CrearContratoAsync(contratoDto, sessionId);
+        
+        return Ok(new { 
+            success = true, 
+            message = "Contrato creado exitosamente", 
+            data = resultado 
+        });
+    }
+    catch (ArgumentException ex)
+    {
+        _logger.LogWarning($"Error de validación al crear contrato: {ex.Message}");
+        return BadRequest(new { 
+            success = false, 
+            message = ex.Message 
+        });
+    }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "Error interno al crear contrato");
+        return StatusCode(500, new { 
+            success = false, 
+            message = "Error interno del servidor" 
+        });
+    }
+}
 
         /// <summary>
         /// Obtener contrato por ID
@@ -68,7 +105,7 @@ namespace ContratosPdfApi.Controllers
             try
             {
                 var contrato = await _contratoService.ObtenerContratoPorIdAsync(id);
-                
+
                 if (contrato == null)
                 {
                     return NotFound(new { success = false, message = "Contrato no encontrado" });
@@ -137,7 +174,7 @@ namespace ContratosPdfApi.Controllers
                 // Crear archivo temporal para subir
                 var tempFileName = $"contrato_{id}_{DateTime.Now:yyyyMMddHHmmss}.pdf";
                 var tempFilePath = Path.Combine(Path.GetTempPath(), tempFileName);
-                
+
                 await System.IO.File.WriteAllBytesAsync(tempFilePath, pdfBytes);
 
                 // Crear IFormFile desde bytes
